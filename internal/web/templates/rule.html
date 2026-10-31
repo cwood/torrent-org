@@ -16,7 +16,13 @@
         <emoji-picker data-source="/static/emoji/data.json" data-emoji-for="rule-name"></emoji-picker>
       </div>
     </div>
-    <label>Colour <input type="color" name="color" value="{{.Rule.Color}}"></label>
+    <div class="color-field">
+      <label for="rule-color">Colour</label>
+      <div class="row swatches">
+        <input id="rule-color" type="color" name="color" value="{{.Rule.Color}}">
+        {{range .Swatches}}<button type="button" class="swatch" style="--rule: {{.Color}}" data-color="{{.Color}}" title="{{.Name}}" aria-label="{{.Name}}"></button>{{end}}
+      </div>
+    </div>
   </div>
   <label>Path
     <input name="path" value="{{.Rule.Path}}" placeholder="{root}/{tracker}">

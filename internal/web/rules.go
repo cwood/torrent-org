@@ -12,8 +12,27 @@ import (
 	"github.com/cwood/torrent-org/internal/rules"
 )
 
-// defaultColor is a new rule's swatch until the user picks one.
-const defaultColor = "#4f8cff"
+// defaultColor is a new rule's colour until the user picks one: the colour
+// the macOS Transmission client gives a new group.
+const defaultColor = "#00a6ff"
+
+// swatch is a preset colour offered in the rule editor.
+type swatch struct {
+	Name  string
+	Color string
+}
+
+// swatches are the macOS client's default groups, which use Apple's system
+// colours.
+var swatches = []swatch{
+	{"Red", "#ff3b30"},
+	{"Orange", "#ff9500"},
+	{"Yellow", "#ffcc00"},
+	{"Green", "#28cd41"},
+	{"Blue", "#007aff"},
+	{"Purple", "#af52de"},
+	{"Gray", "#8e8e93"},
+}
 
 type ruleForm struct {
 	chrome
@@ -22,7 +41,8 @@ type ruleForm struct {
 	Errors     []string
 	// Return is where to go after saving or cancelling, when the editor was
 	// opened from somewhere other than the rules list.
-	Return string
+	Return   string
+	Swatches []swatch
 }
 
 // conditionRow is one editable condition with the choices for its selects.
@@ -41,7 +61,7 @@ func (s *Server) ruleForm(req *http.Request, r rules.Rule, err error) ruleForm {
 	if r.ID == 0 {
 		title = "New rule"
 	}
-	f := ruleForm{chrome: chrome{title, "rules"}, Rule: r, Return: returnTo(req)}
+	f := ruleForm{chrome: chrome{title, "rules"}, Rule: r, Return: returnTo(req), Swatches: swatches}
 	for _, c := range r.Conditions {
 		f.Conditions = append(f.Conditions, newConditionRow(c))
 	}

@@ -8,6 +8,14 @@
   --danger: #d64545;
   --ok: #2f9e66;
   --radius: 8px;
+  /* Progress bar colours from the macOS Transmission client. */
+  --bar-downloading: #59abfa;
+  --bar-seeding: #70e366;
+  --bar-checking: #eee33e;
+  --bar-queued: #9db8c6;
+  --bar-queued-done: #a0b6a3;
+  --bar-stopped: #b2b2b2;
+  --bar-track: #f2f2f2;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -20,6 +28,13 @@
     --accent: #6c9fff;
     --danger: #ef6b6b;
     --ok: #4cc38a;
+    --bar-downloading: #3b72a7;
+    --bar-seeding: #4b9744;
+    --bar-checking: #beb632;
+    --bar-queued: #697b84;
+    --bar-queued-done: #6b796d;
+    --bar-stopped: #595959;
+    --bar-track: #1a1a1a;
     color-scheme: dark;
   }
 }
@@ -75,13 +90,19 @@ legend { padding: 0 6px; }
 ul.alert { padding-left: 28px; }
 .empty { color: var(--muted); }
 
-.badge {
-  --rule: var(--muted);
-  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
-  background: color-mix(in srgb, var(--rule) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
-}
+.badge { --rule: var(--muted); display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; }
 .badge.muted { color: var(--muted); }
+/* A glossy disc like the macOS client's group icons. */
+.dot {
+  flex: none; width: 11px; height: 11px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--rule) 45%, white), var(--rule) 55%, color-mix(in srgb, var(--rule) 75%, black));
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.3);
+}
+.dot.none { background: none; box-shadow: inset 0 0 0 1px var(--muted); }
+.color-field { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
+.swatches { flex-wrap: nowrap; align-items: center; gap: 6px; }
+.swatch { --rule: var(--muted); width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 0; background: var(--rule); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2); cursor: pointer; }
+.swatch[aria-pressed="true"] { outline: 2px solid var(--text); outline-offset: 2px; }
 .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
 
 /* Torrent list: sections hold rule groups hold torrents, drawn as nested
@@ -110,10 +131,22 @@ ul.alert { padding-left: 28px; }
 .torrent .error { color: var(--danger); font-size: 12px; }
 .state-downloading { color: var(--accent); }
 .state-seeding { color: var(--ok); }
-progress { width: 100%; height: 4px; appearance: none; border: 0; border-radius: 2px; background: var(--border); }
-progress::-webkit-progress-bar { background: var(--border); border-radius: 2px; }
-progress::-webkit-progress-value { background: var(--accent); border-radius: 2px; }
-progress::-moz-progress-bar { background: var(--accent); border-radius: 2px; }
+/* Progress bars use the macOS client's state colours and its two-tone
+   shading: a lighter top half over a darker bottom half. */
+progress {
+  --bar: var(--bar-downloading);
+  --shade: linear-gradient(to bottom, var(--bar) 0%, color-mix(in srgb, var(--bar) 95%, black) 50%, color-mix(in srgb, var(--bar) 85%, black) 50%, var(--bar) 100%);
+  width: 100%; height: 8px; appearance: none; border: 0; border-radius: 3px; overflow: hidden;
+  background: linear-gradient(to bottom, var(--bar-track) 50%, color-mix(in srgb, var(--bar-track) 92%, black) 50%);
+}
+progress::-webkit-progress-bar { background: transparent; }
+progress::-webkit-progress-value { background: var(--shade); }
+progress::-moz-progress-bar { background: var(--shade); }
+progress.bar-seeding { --bar: var(--bar-seeding); }
+progress.bar-checking { --bar: var(--bar-checking); }
+progress.bar-queued { --bar: var(--bar-queued); }
+progress.bar-queued.done { --bar: var(--bar-queued-done); }
+progress.bar-stopped { --bar: var(--bar-stopped); }
 
 /* Emoji picker */
 .name-field { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }

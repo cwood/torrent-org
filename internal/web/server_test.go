@@ -183,6 +183,15 @@ func TestRemaining(t *testing.T) {
 	}
 }
 
+func TestNewRuleColors(t *testing.T) {
+	h := newHarness(t)
+	body := h.get("/rules/new").Body.String()
+	require.Contains(t, body, `name="color" value="#00a6ff"`, "new rules default to the macOS new-group colour")
+	for _, sw := range swatches {
+		require.Contains(t, body, `data-color="`+sw.Color+`" title="`+sw.Name+`"`)
+	}
+}
+
 func TestReveal(t *testing.T) {
 	h := newHarness(t)
 	h.client.EXPECT().Torrents(mock.Anything).Return([]torrent.Status{album("aaa", root+"/red/audio")}, nil).Times(4)
@@ -217,7 +226,7 @@ func TestTorrentsPageSections(t *testing.T) {
 	require.Contains(t, body, `<details class="layer section" data-section="downloading" open>`)
 	require.Contains(t, body, "Nothing downloading.")
 	require.Contains(t, body, `<details class="layer section" data-section="completed">`, "completed starts collapsed")
-	require.NotContains(t, body, "<progress", "completed torrents have no progress bar")
+	require.Contains(t, body, `<progress class="bar-seeding done"`, "completed torrents keep a green bar, as on macOS")
 	require.Contains(t, body, "↑ 3.1 kB/s")
 	require.NotContains(t, body, "No torrents yet")
 }

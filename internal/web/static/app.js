@@ -133,3 +133,27 @@ document.addEventListener("htmx:responseError", (e) => {
     alert(`Could not show the files: ${e.detail.xhr.responseText.trim()}`);
   }
 });
+
+// Colour swatches in the rule editor set the colour input and mark the
+// matching swatch, including when a colour is picked by hand.
+(() => {
+  const sync = (input) => {
+    input.closest(".swatches")?.querySelectorAll(".swatch").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.color === input.value.toLowerCase()));
+    });
+  };
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest?.(".swatch");
+    const input = b?.closest(".swatches")?.querySelector('input[type="color"]');
+    if (!input) return;
+    input.value = b.dataset.color;
+    sync(input);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  document.addEventListener("input", (e) => {
+    if (e.target.matches?.('.swatches input[type="color"]')) sync(e.target);
+  });
+  const syncAll = () => document.querySelectorAll('.swatches input[type="color"]').forEach(sync);
+  document.addEventListener("DOMContentLoaded", syncAll);
+  document.addEventListener("htmx:afterSettle", syncAll);
+})();
