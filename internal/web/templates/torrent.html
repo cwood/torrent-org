@@ -1,0 +1,23 @@
+{{define "content"}}
+<p><a href="/">← Torrents</a></p>
+<section id="torrent" class="card">
+  {{with .Status}}
+  <h1 class="name">{{.Name}}</h1>
+  {{if $.Error}}<p class="alert">{{$.Error}}</p>{{end}}
+  <dl class="facts">
+    <dt>State</dt><dd><span class="state state-{{.State}}">{{.State}}</span> · {{percent .Progress}}%</dd>
+    <dt>Tracker</dt><dd>{{$.Auto.Tracker}}</dd>
+    <dt>Info hash</dt><dd><code>{{.Hash}}</code></dd>
+    <dt>Now</dt><dd>{{template "badge" $.Rule}}{{if $.Manual}} <span class="tag">manual</span>{{end}} <code>{{.Dir}}</code> {{template "reveal" .}}</dd>
+    <dt>Rules pick</dt><dd>{{template "badge" $.Auto.Rule}} <code>{{$.Auto.Dir}}</code></dd>
+    <dt>Save to</dt><dd>{{template "badge" $.Placement.Rule}} <code>{{$.Placement.Dir}}</code></dd>
+  </dl>
+  <form method="post" action="/torrents/{{.Hash}}" class="row">
+    {{template "picker" $.Picker}}
+    <button class="primary" {{if $.Unchanged}}disabled{{end}}>Save</button>
+  </form>
+  <p class="hint">Choosing anything but Automatic pins this torrent so rule changes never move it. Active torrents are paused while their files move and resume afterwards.</p>
+  {{template "files" .Files}}
+  {{end}}
+</section>
+{{end}}

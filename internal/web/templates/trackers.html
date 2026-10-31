@@ -1,0 +1,50 @@
+{{define "content"}}
+<h1>Trackers</h1>
+<p class="hint">Map announce hosts to the directory name used for <code>{tracker}</code>. Hosts without an alias use the host name itself.</p>
+{{if .Error}}<p class="alert">{{.Error}}</p>{{end}}
+<table class="trackers">
+  <thead><tr><th>Announce host</th><th>Directory</th><th></th></tr></thead>
+  <tbody>
+    {{range .Aliases}}
+    <tr>
+      <td><code>{{.Host}}</code></td>
+      <td>
+        <form method="post" action="/trackers" class="row">
+          <input type="hidden" name="host" value="{{.Host}}">
+          <input name="name" value="{{.Name}}" required class="grow">
+          <button>Save</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/trackers/delete" hx-confirm="Remove the alias for {{.Host}}?">
+          <input type="hidden" name="host" value="{{.Host}}">
+          <button class="danger">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    {{range .Unaliased}}
+    <tr class="unaliased">
+      <td><code>{{.}}</code> <span class="tag">seen</span></td>
+      <td>
+        <form method="post" action="/trackers" class="row">
+          <input type="hidden" name="host" value="{{.}}">
+          <input name="name" required class="grow" placeholder="short name">
+          <button class="primary">Add</button>
+        </form>
+      </td>
+      <td></td>
+    </tr>
+    {{end}}
+    <tr>
+      <td colspan="3">
+        <form method="post" action="/trackers" class="row">
+          <input name="host" required placeholder="tracker.example.org" class="grow">
+          <input name="name" required placeholder="directory name" class="grow">
+          <button class="primary">Add alias</button>
+        </form>
+      </td>
+    </tr>
+  </tbody>
+</table>
+{{end}}

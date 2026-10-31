@@ -1,0 +1,10 @@
+template: testify
+packages:
+  github.com/cwood/torrent-org/internal/torrent:
+    config:
+      dir: "{{.InterfaceDir}}/torrentmock"
+      pkgname: torrentmock
+      filename: "{{.InterfaceName | snakecase}}.go"
+      structname: "{{.InterfaceName}}"
+    interfaces:
+      Client:

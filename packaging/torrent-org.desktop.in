@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=torrent-org
+GenericName=Torrent organizer
+Comment=Organize Transmission downloads with rules
+Exec=@BINDIR@/torrent-org open %f
+Icon=torrent-org
+Terminal=false
+MimeType=application/x-bittorrent;
+Categories=Network;FileTransfer;P2P;

@@ -1,0 +1,85 @@
+{{define "content"}}
+<h1>{{.Title}}</h1>
+{{if .Errors}}<ul class="alert">{{range .Errors}}<li>{{.}}</li>{{end}}</ul>{{end}}
+<div class="split">
+<form method="post" action="/rules/{{if .Rule.ID}}{{.Rule.ID}}{{else}}new{{end}}" class="stack" id="rule-form">
+  {{if .Rule.ID}}<input type="hidden" name="id" value="{{.Rule.ID}}">{{end}}
+  {{with .Return}}<input type="hidden" name="return" value="{{.}}">{{end}}
+  <div class="row">
+    <div class="grow name-field">
+      <label for="rule-name">Name</label>
+      <div class="row">
+        <button type="button" class="emoji-button" popovertarget="emoji-popover" title="Choose an emoji" data-emoji-for="rule-name">🙂</button>
+        <input id="rule-name" name="name" value="{{.Rule.Name}}" required placeholder="🎵 Audio" autofocus class="grow">
+      </div>
+      <div id="emoji-popover" popover>
+        <emoji-picker data-source="/static/emoji/data.json" data-emoji-for="rule-name"></emoji-picker>
+      </div>
+    </div>
+    <label>Colour <input type="color" name="color" value="{{.Rule.Color}}"></label>
+  </div>
+  <label>Path
+    <input name="path" value="{{.Rule.Path}}" placeholder="{root}/{tracker}">
+    <small>Use <code>{root}</code> and <code>{tracker}</code>. Leave empty for the default location.</small>
+  </label>
+  <fieldset>
+    <legend>
+      Match
+      <select name="mode">
+        <option value="all" {{if eq .Rule.Mode "all"}}selected{{end}}>all</option>
+        <option value="any" {{if eq .Rule.Mode "any"}}selected{{end}}>any</option>
+      </select>
+      of these conditions
+    </legend>
+    <div id="conditions" class="stack">
+      {{range .Conditions}}{{template "condition" .}}{{end}}
+    </div>
+    <button type="button" hx-get="/rules/condition" hx-target="#conditions" hx-swap="beforeend">Add condition</button>
+  </fieldset>
+  <div class="row">
+    <button class="primary">Save</button>
+    <a href="{{or .Return "/rules"}}" class="button">Cancel</a>
+  </div>
+</form>
+<aside>
+  <h2>On save</h2>
+  <div id="preview" hx-post="/rules/preview" hx-include="#rule-form" hx-trigger="load, input from:#rule-form delay:300ms, change from:#rule-form, htmx:afterSettle from:#conditions">
+    <p class="hint">Loading…</p>
+  </div>
+</aside>
+</div>
+{{end}}
+
+{{define "condition"}}
+<div class="condition row">
+  <select name="field">
+    {{range .Fields}}<option value="{{.}}" {{if eq . $.Condition.Field}}selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  <select name="op">
+    {{range .Ops}}<option value="{{.}}" {{if eq . $.Condition.Op}}selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  <input name="value" value="{{.Condition.Value}}" class="grow" placeholder="flac">
+  <button type="button" class="danger" title="Remove" hx-on:click="const f = this.closest('form'); this.closest('.condition').remove(); htmx.trigger(f, 'change')">✕</button>
+</div>
+{{end}}
+
+{{define "preview"}}
+{{if .Error}}<p class="alert">Cannot reach the torrent client: {{.Error}}</p>
+{{else if not .Changes}}<p class="hint">{{if .Manual}}No conditions: this rule is only assigned by hand. {{end}}Saving won't move any torrents.</p>
+{{else}}
+<p class="hint">Checked torrents are moved when you save. Active ones are paused while their files move.</p>
+<ul class="matches">
+  {{range .Changes}}
+  <li>
+    {{if .Assignment.Manual}}
+    <label class="change muted"><input type="checkbox" disabled> <span class="name">{{.Name}}</span> <span class="tag">manual, not moved</span></label>
+    {{else}}
+    <label class="change"><input type="checkbox" name="move" value="{{.Hash}}" form="rule-form" checked> <span class="name">{{.Name}}</span></label>
+    {{end}}
+    <div class="move"><code>{{.Dir}}</code>{{if ne .Dir .Placement.Dir}} → <code>{{.Placement.Dir}}</code>{{end}}</div>
+    {{if ne .Group .Placement.Group}}<div class="move">group: {{or .Group "none"}} → {{or .Placement.Group "none"}}</div>{{end}}
+  </li>
+  {{end}}
+</ul>
+{{end}}
+{{end}}

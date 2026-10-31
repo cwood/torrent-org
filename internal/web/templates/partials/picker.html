@@ -1,0 +1,10 @@
+{{/* picker renders the rule select; changing it refreshes the preview. */}}
+{{define "picker"}}
+<label class="grow">Rule
+  <select name="rule" hx-post="{{.Action}}" hx-include="closest form" hx-target="#{{.Target}}" hx-select="#{{.Target}}" hx-swap="outerHTML">
+    <option value="auto" {{if eq .Choice "auto"}}selected{{end}}>Automatic (first matching rule)</option>
+    {{range .Rules}}<option value="{{.ID}}" {{if eq $.Choice (printf "%d" .ID)}}selected{{end}}>{{.Name}}</option>{{end}}
+    <option value="none" {{if eq .Choice "none"}}selected{{end}}>No rule (default location)</option>
+  </select>
+</label>
+{{end}}

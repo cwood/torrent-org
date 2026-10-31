@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Generated code is current
+        run: make generate && git diff --exit-code
+      - name: Formatted
+        run: test -z "$(gofmt -l .)"
+      - name: Lint
+        run: make lint
+      - name: Test
+        run: go test -race ./...
+      - name: Builds for macOS
+        run: GOOS=darwin GOARCH=arm64 go build ./...

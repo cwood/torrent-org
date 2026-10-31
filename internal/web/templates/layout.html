@@ -1,0 +1,33 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"(409|422|502)","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <meta name="theme-color" content="#4f8cff">
+  <title>{{.Title}} · torrent-org</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/sse.js" defer></script>
+  <script src="/static/app.js" defer></script>
+  <script type="module" src="/static/emoji/picker.js"></script>
+</head>
+<body hx-boost="true">
+  <header class="top">
+    <a class="brand" href="/">torrent-org</a>
+    <nav>
+      <a href="/" {{if eq .Nav "torrents"}}aria-current="page"{{end}}>Torrents</a>
+      <a href="/rules" {{if eq .Nav "rules"}}aria-current="page"{{end}}>Rules</a>
+      <a href="/trackers" {{if eq .Nav "trackers"}}aria-current="page"{{end}}>Trackers</a>
+      <a href="/add" class="primary" data-pick-torrent {{if eq .Nav "add"}}aria-current="page"{{end}}>Add torrent</a>
+    </nav>
+  </header>
+  <input type="file" id="pick-torrent" accept=".torrent,application/x-bittorrent" hidden>
+  <main>
+    {{template "content" .}}
+  </main>
+</body>
+</html>
+{{end}}

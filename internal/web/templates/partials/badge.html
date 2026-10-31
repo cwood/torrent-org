@@ -1,0 +1,2 @@
+{{/* badge renders a rule as a coloured pill; a nil rule is the default location. */}}
+{{define "badge"}}{{if .}}<span class="badge" style="--rule: {{.Color}}">{{.Name}}</span>{{else}}<span class="badge muted">Default</span>{{end}}{{end}}

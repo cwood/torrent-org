@@ -1,0 +1,13 @@
+{
+  "name": "torrent-org",
+  "short_name": "torrent-org",
+  "description": "Organize torrent downloads with rules",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#121418",
+  "theme_color": "#4f8cff",
+  "icons": [
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

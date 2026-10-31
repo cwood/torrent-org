@@ -1,0 +1,30 @@
+{{define "content"}}
+<div class="heading">
+  <h1>Rules</h1>
+  <a class="button primary" href="/rules/new">New rule</a>
+</div>
+{{if .Error}}<p class="alert">{{.Error}}</p>{{end}}
+<p class="hint">Rules are checked top to bottom and the first match wins. New torrents are moved to the matching rule's path and grouped under its name. A rule without conditions is only assigned by hand.</p>
+{{if not .Rules}}<p class="empty">No rules yet.</p>{{end}}
+<ol class="rules">
+  {{range $i, $r := .Rules}}
+  <li style="--rule: {{$r.Color}}">
+    <div class="rule-main">
+      <a class="rule-name" href="/rules/{{$r.ID}}">{{$r.Name}}</a>
+      <div class="rule-detail">
+        {{if $r.Conditions}}
+          {{if eq $r.Mode "any"}}Any of{{else}}All of{{end}}:
+          {{range $j, $c := $r.Conditions}}{{if $j}}, {{end}}<code>{{$c.Field}} {{$c.Op}} {{$c.Value}}</code>{{end}}
+        {{else}}Manual only{{end}}
+      </div>
+      <div class="rule-detail">→ <code>{{or $r.Path "{root}/{tracker}"}}</code></div>
+    </div>
+    <div class="rule-actions">
+      <form method="post" action="/rules/{{$r.ID}}/move"><input type="hidden" name="dir" value="up"><button title="Move up" {{if eq $i 0}}disabled{{end}}>↑</button></form>
+      <form method="post" action="/rules/{{$r.ID}}/move"><input type="hidden" name="dir" value="down"><button title="Move down">↓</button></form>
+      <form method="post" action="/rules/{{$r.ID}}/delete" hx-confirm="Delete rule {{$r.Name}}? Torrents it placed stay where they are."><button class="danger">Delete</button></form>
+    </div>
+  </li>
+  {{end}}
+</ol>
+{{end}}

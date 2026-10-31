@@ -1,0 +1,7 @@
+{{/* files renders a torrent's file list, collapsed. */}}
+{{define "files"}}
+<details class="files">
+  <summary>Files ({{len .}})</summary>
+  <ul>{{range .}}<li><span>{{.Path}}</span> <span class="count">{{bytes .Size}}</span></li>{{end}}</ul>
+</details>
+{{end}}

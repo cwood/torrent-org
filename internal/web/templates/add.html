@@ -1,0 +1,39 @@
+{{define "content"}}
+<h1>Add torrent</h1>
+{{if .Error}}<p class="alert">{{.Error}}</p>{{end}}
+{{if not .Torrent}}
+<form method="post" action="/add/preview" enctype="multipart/form-data" class="row upload">
+  <input type="file" name="torrent" accept=".torrent,application/x-bittorrent" required class="grow">
+  <button>Inspect</button>
+</form>
+{{end}}
+
+{{with .Torrent}}
+<section id="add-preview" class="card">
+  <h2 class="name">{{.Name}}</h2>
+  <dl class="facts">
+    <dt>Size</dt><dd>{{bytes $.Size}} in {{len .Files}} file{{if ne (len .Files) 1}}s{{end}}</dd>
+    <dt>Tracker</dt><dd>{{$.Placement.Tracker}}</dd>
+    <dt>Info hash</dt><dd><code>{{.Hash}}</code></dd>
+    <dt>Destination</dt><dd><code>{{$.Placement.Dir}}</code></dd>
+    <dt>Group</dt><dd>{{template "badge" $.Placement.Rule}}</dd>
+  </dl>
+
+  {{if $.Duplicate}}
+  <p class="alert">This torrent is already in the client; adding it again would leave it where it is.</p>
+  {{template "files" .Files}}
+  {{else}}
+  <form method="post" action="/add" class="stack">
+    <input type="hidden" name="metainfo" value="{{$.Metainfo}}">
+    {{with $.Upload}}<input type="hidden" name="upload" value="{{.}}">{{end}}
+    <div class="row">
+      {{template "picker" $.Picker}}
+      {{with $.Upload}}<a class="button" href="/rules/new?return=/add/{{.}}">New rule…</a>{{end}}
+      <button class="primary">Add to client</button>
+    </div>
+    {{template "filepicker" $.Files}}
+  </form>
+  {{end}}
+</section>
+{{end}}
+{{end}}

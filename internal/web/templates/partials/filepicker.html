@@ -1,0 +1,17 @@
+{{/* filepicker renders checkboxes named "file" for the enclosing form; the
+     header box toggles them all. */}}
+{{define "filepicker"}}
+<fieldset class="files picker">
+  <legend>
+    <label class="change"><input type="checkbox" checked hx-on:change="this.closest('fieldset').querySelectorAll('input[name=file]').forEach(c => c.checked = this.checked)"> Files to download</label>
+  </legend>
+  <ul>
+    {{range .}}
+    <li>
+      <label class="change grow"><input type="checkbox" name="file" value="{{.Index}}" {{if .Checked}}checked{{end}}> <span>{{.Path}}</span></label>
+      <span class="count">{{bytes .Size}}</span>
+    </li>
+    {{end}}
+  </ul>
+</fieldset>
+{{end}}

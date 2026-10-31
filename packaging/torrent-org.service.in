@@ -1,0 +1,12 @@
+[Unit]
+Description=torrent-org: organize Transmission downloads with rules
+Documentation=https://github.com/cwood/torrent-org
+After=network-online.target
+
+[Service]
+ExecStart=@BINDIR@/torrent-org
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

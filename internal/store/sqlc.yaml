@@ -1,0 +1,16 @@
+version: "2"
+sql:
+  - engine: sqlite
+    schema: migrations
+    queries: queries.sql
+    gen:
+      go:
+        package: db
+        out: db
+        overrides:
+          - column: rules.mode
+            go_type: github.com/cwood/torrent-org/internal/rules.Mode
+          - column: rule_conditions.field
+            go_type: github.com/cwood/torrent-org/internal/rules.Field
+          - column: rule_conditions.op
+            go_type: github.com/cwood/torrent-org/internal/rules.Op
