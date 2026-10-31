@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path"
 	"time"
 
 	"github.com/hekmon/transmissionrpc/v3"
@@ -69,6 +70,19 @@ func (c *Client) Check(ctx context.Context) error {
 		return fmt.Errorf("%w: version %d lacks labels; need %d (Transmission 4.0+)", ErrIncompatible, version, minRPCVersion)
 	}
 	return nil
+}
+
+// WebURL is the address of the web interface Transmission serves beside the
+// RPC endpoint rpcURL. Credentials are dropped so it is safe to put in a
+// page; the web interface asks for them itself.
+func WebURL(rpcURL string) (string, error) {
+	u, err := url.Parse(rpcURL)
+	if err != nil {
+		return "", fmt.Errorf("parse transmission url: %w", err)
+	}
+	u.User, u.RawQuery, u.Fragment = nil, "", ""
+	u.Path = path.Join(path.Dir(u.Path), "web") + "/"
+	return u.String(), nil
 }
 
 // Torrents lists every torrent in the daemon.

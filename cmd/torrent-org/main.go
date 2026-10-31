@@ -125,7 +125,11 @@ func serve(ctx context.Context, cfg config.Config) error {
 	}
 
 	rec := intake.NewReconciler(client, st, cfg.Root)
-	ui, err := web.New(client, st, rec, cfg.Root, cfg.PollInterval, desktop.Reveal)
+	webUI, err := transmission.WebURL(cfg.Transmission.URL)
+	if err != nil {
+		return err
+	}
+	ui, err := web.New(client, st, rec, cfg.Root, cfg.PollInterval, desktop.Reveal, webUI)
 	if err != nil {
 		return err
 	}

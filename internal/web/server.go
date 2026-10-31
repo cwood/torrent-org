@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net/http"
 	"path"
 	"strings"
@@ -40,9 +41,10 @@ type Server struct {
 // New creates a Server. interval is how often the torrent list refreshes.
 //
 // reveal shows a path in the user's file manager; it only makes sense when
-// the browser runs on the same machine as the service.
-func New(client torrent.Client, st *store.Store, in *intake.Reconciler, root string, interval time.Duration, reveal func(ctx context.Context, path string) error) (*Server, error) {
-	pages, err := parseTemplates()
+// the browser runs on the same machine as the service. clientUI is the
+// torrent client's own web interface, linked from the header when non-empty.
+func New(client torrent.Client, st *store.Store, in *intake.Reconciler, root string, interval time.Duration, reveal func(ctx context.Context, path string) error, clientUI string) (*Server, error) {
+	pages, err := parseTemplates(clientUI)
 	if err != nil {
 		return nil, err
 	}
@@ -86,8 +88,12 @@ func remaining(d time.Duration) string {
 
 // parseTemplates builds one template set per page: the shared layout and
 // partials plus the page's own file, so each page can define "content".
-func parseTemplates() (map[string]*template.Template, error) {
-	base, err := template.New("").Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/partials/*.html")
+// parseTemplates parses every page. clientUI is the torrent client's own web
+// interface, linked from the header when non-empty.
+func parseTemplates(clientUI string) (map[string]*template.Template, error) {
+	fm := maps.Clone(funcs)
+	fm["clientUI"] = func() string { return clientUI }
+	base, err := template.New("").Funcs(fm).ParseFS(assets, "templates/layout.html", "templates/partials/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse layout: %w", err)
 	}

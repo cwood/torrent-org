@@ -21,6 +21,7 @@
       <a href="/" {{if eq .Nav "torrents"}}aria-current="page"{{end}}>Torrents</a>
       <a href="/rules" {{if eq .Nav "rules"}}aria-current="page"{{end}}>Rules</a>
       <a href="/trackers" {{if eq .Nav "trackers"}}aria-current="page"{{end}}>Trackers</a>
+      {{with clientUI}}<a class="icon" href="{{.}}" target="_blank" rel="noopener" hx-boost="false" title="Transmission web interface" aria-label="Transmission web interface"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9M12 3C9.5 5.7 8.2 8.7 8.2 12s1.3 6.3 3.8 9"/></svg></a>{{end}}
       <a href="/add" class="primary" data-pick-torrent {{if eq .Nav "add"}}aria-current="page"{{end}}>Add torrent</a>
     </nav>
   </header>

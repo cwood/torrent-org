@@ -54,7 +54,7 @@ func newHarness(t *testing.T) *harness {
 		h.revealed = append(h.revealed, path)
 		return h.revealErr
 	}
-	srv, err := New(client, st, intake.NewReconciler(client, st, root), root, 10*time.Millisecond, reveal)
+	srv, err := New(client, st, intake.NewReconciler(client, st, root), root, 10*time.Millisecond, reveal, "http://localhost:9091/transmission/web/")
 	require.NoError(t, err)
 	h.h = srv.Handler()
 	return h
@@ -181,6 +181,11 @@ func TestRemaining(t *testing.T) {
 	} {
 		require.Equal(t, want, remaining(d), d)
 	}
+}
+
+func TestClientUILink(t *testing.T) {
+	h := newHarness(t)
+	require.Contains(t, h.get("/rules").Body.String(), `<a class="icon" href="http://localhost:9091/transmission/web/" target="_blank" rel="noopener"`)
 }
 
 func TestNewRuleColors(t *testing.T) {

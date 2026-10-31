@@ -61,6 +61,8 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 .top nav a { padding: 6px 10px; border-radius: var(--radius); color: var(--muted); }
 .top nav a[aria-current] { color: var(--text); background: var(--bg); }
 .top nav a.primary { color: #fff; background: var(--accent); }
+.top nav a.icon { display: inline-flex; align-items: center; }
+.top nav a.icon:hover { color: var(--text); }
 
 main { max-width: 1100px; margin: 0 auto; padding: 16px; }
 

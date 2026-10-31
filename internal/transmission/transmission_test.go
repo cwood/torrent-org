@@ -373,3 +373,14 @@ func TestLive(t *testing.T) {
 	}
 	t.Logf("listed %d torrents", len(got))
 }
+
+func TestWebURL(t *testing.T) {
+	for rpc, want := range map[string]string{
+		"http://localhost:9091/transmission/rpc":           "http://localhost:9091/transmission/web/",
+		"https://me:secret@seedbox.example/custom/rpc?x=1": "https://seedbox.example/custom/web/",
+	} {
+		got, err := WebURL(rpc)
+		require.NoError(t, err)
+		require.Equal(t, want, got, rpc)
+	}
+}
