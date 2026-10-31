@@ -86,21 +86,36 @@
 
 {{define "preview"}}
 {{if .Error}}<p class="alert">Cannot reach the torrent client: {{.Error}}</p>
-{{else if not .Changes}}<p class="hint">{{if .Manual}}No conditions: this rule is only assigned by hand. {{end}}Saving won't move any torrents.</p>
 {{else}}
-<p class="hint">Checked torrents are moved when you save. Active ones are paused while their files move.</p>
-<ul class="matches">
-  {{range .Changes}}
-  <li>
-    {{if .Assignment.Manual}}
-    <label class="change muted"><input type="checkbox" disabled> <span class="name">{{.Name}}</span> <span class="tag">manual, not moved</span></label>
-    {{else}}
-    <label class="change"><input type="checkbox" name="move" value="{{.Hash}}" form="rule-form" checked> <span class="name">{{.Name}}</span></label>
-    {{end}}
-    <div class="move"><code>{{.Dir}}</code>{{if ne .Dir .Placement.Dir}} → <code>{{.Placement.Dir}}</code>{{end}}</div>
-    {{if ne .Group .Placement.Group}}<div class="move">group: {{or .Group "none"}} → {{or .Placement.Group "none"}}</div>{{end}}
-  </li>
-  {{end}}
-</ul>
+<h3>{{with .Matches.Len}}Matches {{.}} torrent{{if ne . 1}}s{{end}}{{else}}Matches no torrents{{end}}</h3>
+{{if .Manual}}<p class="hint">No conditions: this rule is only assigned by hand.</p>{{end}}
+{{with .Matches}}{{if .Len}}
+<ul class="matches">{{range .Head}}{{template "match" .}}{{end}}</ul>
+{{with .Tail}}<details class="more"><summary>{{len .}} more</summary><ul class="matches">{{range .}}{{template "match" .}}{{end}}</ul></details>{{end}}
+{{end}}{{end}}
+{{with .Taken}}<p class="hint">{{.}} more match{{if eq . 1}}es{{end}}, but an earlier rule or a manual pin takes {{if eq . 1}}it{{else}}them{{end}}.</p>{{end}}
+
+{{with .Changes}}{{if .Len}}
+<h3>{{with $.Moving}}On save, also move {{.}}{{else}}On save{{end}}</h3>
+{{if $.Moving}}<p class="hint">Checked torrents are moved when you save. Active ones are paused while their files move.</p>{{end}}
+<ul class="matches">{{range .Head}}{{template "change" .}}{{end}}</ul>
+{{with .Tail}}<details class="more"><summary>{{len .}} more</summary><ul class="matches">{{range .}}{{template "change" .}}{{end}}</ul></details>{{end}}
+{{end}}{{end}}
 {{end}}
+{{end}}
+
+{{define "match"}}<li><span class="name">{{.Name}}</span>{{if .Manual}} <span class="tag">manual</span>{{end}}</li>{{end}}
+
+{{/* change is a torrent saving would move. Its checkbox stays in the form
+   when folded away, so hidden rows still move unless unchecked. */}}
+{{define "change"}}
+<li>
+  {{if .Assignment.Manual}}
+  <label class="change muted"><input type="checkbox" disabled> <span class="name">{{.Name}}</span> <span class="tag">manual, not moved</span></label>
+  {{else}}
+  <label class="change"><input type="checkbox" name="move" value="{{.Hash}}" form="rule-form" checked> <span class="name">{{.Name}}</span></label>
+  {{end}}
+  <div class="move"><code>{{.Dir}}</code>{{if ne .Dir .Placement.Dir}} → <code>{{.Placement.Dir}}</code>{{end}}</div>
+  {{if ne .Group .Placement.Group}}<div class="move">group: {{or .Group "none"}} → {{or .Placement.Group "none"}}</div>{{end}}
+</li>
 {{end}}

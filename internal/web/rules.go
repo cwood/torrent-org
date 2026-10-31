@@ -12,6 +12,8 @@ import (
 
 	"github.com/cwood/torrent-org/internal/intake"
 	"github.com/cwood/torrent-org/internal/rules"
+	"github.com/cwood/torrent-org/internal/store"
+	"github.com/cwood/torrent-org/internal/torrent"
 )
 
 // defaultColor is a new rule's colour until the user picks one: the colour
@@ -298,12 +300,12 @@ func (s *Server) applyRule(r *http.Request, id int64, selected []string) error {
 	if err != nil {
 		return err
 	}
-	changes, err := s.changes(r, rs, trackers, id)
+	statuses, assignments, err := s.holdings(r)
 	if err != nil {
 		return err
 	}
 	var moves []intake.Move
-	for _, c := range changes {
+	for _, c := range changes(statuses, assignments, rs, trackers, s.root, id) {
 		if !c.Assignment.Manual && slices.Contains(selected, c.Hash) {
 			moves = append(moves, intake.Move{Hash: c.Hash, Placement: c.Placement})
 		}
@@ -314,25 +316,84 @@ func (s *Server) applyRule(r *http.Request, id int64, selected []string) error {
 	return s.intake.Relocate(r.Context(), moves)
 }
 
-// changes plans every torrent against rs and keeps the changes caused by the
-// rule with id, sorted by name.
-func (s *Server) changes(r *http.Request, rs []rules.Rule, trackers map[string]string, id int64) ([]intake.Change, error) {
+// holdings fetches what placement previews need: every torrent the client
+// holds and its assignment.
+func (s *Server) holdings(r *http.Request) ([]torrent.Status, map[string]store.Assignment, error) {
 	statuses, err := s.client.Torrents(r.Context())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	assignments, err := s.store.Assignments(r.Context())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	return statuses, assignments, nil
+}
+
+// changes plans every torrent against rs and keeps the changes caused by the
+// rule with id, sorted by name.
+func changes(statuses []torrent.Status, assignments map[string]store.Assignment, rs []rules.Rule, trackers map[string]string, root string, id int64) []intake.Change {
 	var out []intake.Change
-	for _, c := range intake.Plan(statuses, assignments, rs, trackers, s.root) {
+	for _, c := range intake.Plan(statuses, assignments, rs, trackers, root) {
 		if affects(c, id) {
 			out = append(out, c)
 		}
 	}
 	slices.SortFunc(out, func(a, b intake.Change) int { return strings.Compare(a.Name, b.Name) })
-	return out, nil
+	return out
+}
+
+// match is a torrent a rule holds, by its conditions or a manual pin.
+type match struct {
+	Name   string
+	Manual bool
+}
+
+// matches lists the torrents rule holds within rs, sorted by name: those it
+// wins by priority, unless pinned elsewhere, and those pinned to it. taken
+// counts torrents its conditions match that an earlier rule or a pin claims.
+func matches(statuses []torrent.Status, assignments map[string]store.Assignment, rs []rules.Rule, rule rules.Rule) (held []match, taken int) {
+	for _, st := range statuses {
+		a := assignments[st.Hash]
+		switch {
+		case a.Manual && rule.ID != 0 && a.RuleID == rule.ID:
+			held = append(held, match{Name: st.Name, Manual: true})
+		case !a.Manual && firstMatch(st.Torrent, rs) == rule.ID:
+			held = append(held, match{Name: st.Name})
+		case rule.Matches(st.Torrent):
+			taken++
+		}
+	}
+	slices.SortFunc(held, func(a, b match) int { return strings.Compare(a.Name, b.Name) })
+	return held, taken
+}
+
+// firstMatch is the ID of the rule in rs that t lands in, or -1 for none.
+func firstMatch(t torrent.Torrent, rs []rules.Rule) int64 {
+	if r, ok := rules.Match(t, rs); ok {
+		return r.ID
+	}
+	return -1
+}
+
+// previewLimit is how many rows each list in the "On save" panel shows
+// before folding the rest behind an expander.
+const previewLimit = 5
+
+// folded is a list shown as its first rows with the rest behind an
+// expander.
+type folded[T any] struct {
+	Head, Tail []T
+}
+
+func fold[T any](s []T) folded[T] {
+	n := min(len(s), previewLimit)
+	return folded[T]{Head: s[:n], Tail: s[n:]}
+}
+
+// Len is the number of rows in the whole list.
+func (f folded[T]) Len() int {
+	return len(f.Head) + len(f.Tail)
 }
 
 // affects reports whether the rule with id causes c: it now claims the
@@ -396,8 +457,9 @@ func (s *Server) moveRule(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/rules")
 }
 
-// previewRule lists the torrents saving the rule being edited would move or
-// regroup, taking the other rules' priority into account.
+// previewRule shows the torrents the rule being edited would hold if saved
+// and the ones saving it would move or regroup, taking the other rules'
+// priority into account.
 func (s *Server) previewRule(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -421,13 +483,29 @@ func (s *Server) previewRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		Changes []intake.Change
-		Manual  bool
-		Error   string
+		Matches folded[match]
+		Taken   int
+		Changes folded[intake.Change]
+		// Moving counts the changes that will move; manual ones are listed
+		// but never moved.
+		Moving int
+		Manual bool
+		Error  string
 	}{Manual: !rule.Match.HasConditions()}
-	data.Changes, err = s.changes(r, rs, trackers, rule.ID)
+	statuses, assignments, err := s.holdings(r)
 	if err != nil {
 		data.Error = err.Error()
+		s.render(w, http.StatusOK, "rule", "preview", data)
+		return
+	}
+	held, taken := matches(statuses, assignments, rs, rule)
+	data.Matches, data.Taken = fold(held), taken
+	cs := changes(statuses, assignments, rs, trackers, s.root, rule.ID)
+	data.Changes = fold(cs)
+	for _, c := range cs {
+		if !c.Assignment.Manual {
+			data.Moving++
+		}
 	}
 	s.render(w, http.StatusOK, "rule", "preview", data)
 }

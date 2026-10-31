@@ -504,6 +504,47 @@ func TestPreviewNewRule(t *testing.T) {
 	require.Contains(t, body, "group: none → 🎬 Video")
 	require.Contains(t, body, "Pinned</span> <span class=\"tag\">manual, not moved</span>")
 	require.NotContains(t, body, "Artist - Album", "the higher-priority audio rule keeps the album")
+	require.Contains(t, body, "<h3>Matches 1 torrent</h3>")
+	require.Contains(t, body, `<li><span class="name">Movie</span></li>`)
+	require.Contains(t, body, "2 more match, but an earlier rule or a manual pin takes them.", "the album and the pinned movie")
+	require.Contains(t, body, "<h3>On save, also move 1</h3>", "the pinned movie is listed but not moved")
+}
+
+func TestPreviewFolds(t *testing.T) {
+	h := newHarness(t)
+	var statuses []torrent.Status
+	for i := range 7 {
+		hash := "m" + strconv.Itoa(i)
+		statuses = append(statuses, movie(hash, "Movie "+strconv.Itoa(i), "/dl"))
+		require.NoError(t, h.store.Assign(t.Context(), store.Assignment{Hash: hash}))
+	}
+	h.client.EXPECT().Torrents(mock.Anything).Return(statuses, nil).Once()
+
+	body := h.post("/rules/preview", ruleValues("🎬 Video", nil)).Body.String()
+	require.Contains(t, body, "<h3>Matches 7 torrents</h3>")
+	require.Equal(t, 2, strings.Count(body, `<details class="more"><summary>2 more</summary>`), "both lists fold after 5")
+	require.Equal(t, 7, strings.Count(body, `name="move"`), "folded rows keep their checkboxes")
+	head, _, _ := strings.Cut(body, "<details")
+	require.Contains(t, head, "Movie 4")
+	require.NotContains(t, head, "Movie 5")
+}
+
+func TestPreviewPinnedMatch(t *testing.T) {
+	h := newHarness(t)
+	audio, statuses := h.library()
+	require.NoError(t, h.store.Assign(t.Context(), store.Assignment{Hash: "mkv", RuleID: audio.ID, Manual: true}))
+	h.client.EXPECT().Torrents(mock.Anything).Return(statuses, nil).Once()
+
+	form := ruleValues(audio.Name, url.Values{
+		"id": {itoa(audio.ID)}, "group_mode": {"all"}, "path": {"{root}/{tracker}/audio"},
+		"cond_group": {"top"}, "field": {"extension"}, "op": {"is"}, "value": {"flac"},
+	})
+	body := h.post("/rules/preview", form).Body.String()
+	require.Contains(t, body, "<h3>Matches 2 torrents</h3>")
+	require.Contains(t, body, `<li><span class="name">Artist - Album</span></li>`)
+	require.Contains(t, body, `<li><span class="name">Movie</span> <span class="tag">manual</span></li>`)
+	require.Contains(t, body, "<h3>On save</h3>", "a pinned torrent is listed but not counted as moving")
+	require.Contains(t, body, "manual, not moved")
 }
 
 func TestPreviewEditedRule(t *testing.T) {
@@ -526,7 +567,9 @@ func TestPreviewNoChanges(t *testing.T) {
 
 	body := h.post("/rules/preview", ruleValues("x", url.Values{"field": nil})).Body.String()
 	require.Contains(t, body, "only assigned by hand")
-	require.Contains(t, body, "Saving won't move any torrents")
+	require.Contains(t, body, "<h3>Matches no torrents</h3>")
+	require.NotContains(t, body, `<ul class="matches">`)
+	require.NotContains(t, body, "On save")
 }
 
 func TestSaveRuleMovesSelected(t *testing.T) {
