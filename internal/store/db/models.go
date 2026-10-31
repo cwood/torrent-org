@@ -7,8 +7,6 @@ package db
 import (
 	"database/sql"
 	"time"
-
-	"github.com/cwood/torrent-org/internal/rules"
 )
 
 type Assignment struct {
@@ -23,20 +21,12 @@ type Baseline struct {
 }
 
 type Rule struct {
-	ID       int64
-	Name     string
-	Color    string
-	Priority int64
-	Mode     rules.Mode
-	Path     string
-}
-
-type RuleCondition struct {
-	ID     int64
-	RuleID int64
-	Field  rules.Field
-	Op     rules.Op
-	Value  string
+	ID         int64
+	Name       string
+	Color      string
+	Priority   int64
+	Path       string
+	Conditions string
 }
 
 type Tracker struct {

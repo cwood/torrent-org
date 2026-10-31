@@ -1,6 +1,7 @@
 // Package rules decides where a torrent belongs. It mirrors the auto-assign
 // groups in the macOS Transmission client: an ordered list of rules, each with
-// conditions combined by "all" or "any", where the first matching rule wins.
+// conditions combined by "all", "any" or "none" and nestable in groups, where
+// the first matching rule wins.
 package rules
 
 import (
@@ -40,13 +41,17 @@ const (
 // Ops lists every Op in display order.
 var Ops = []Op{OpIs, OpContains, OpBeginsWith, OpEndsWith}
 
-// Mode is how a rule combines its conditions.
+// Mode is how a group combines its conditions and nested groups.
 type Mode string
 
 const (
-	ModeAll Mode = "all"
-	ModeAny Mode = "any"
+	ModeAll  Mode = "all"
+	ModeAny  Mode = "any"
+	ModeNone Mode = "none"
 )
+
+// Modes lists every Mode in display order.
+var Modes = []Mode{ModeAll, ModeAny, ModeNone}
 
 // Untracked is the tracker directory name used for torrents with no
 // parseable announce URL.
@@ -59,9 +64,65 @@ const Untracked = "untracked"
 // extension (see [torrent.Torrent.DominantExtension]); a leading dot in Value
 // is ignored.
 type Condition struct {
-	Field Field
-	Op    Op
-	Value string
+	Field Field  `json:"field"`
+	Op    Op     `json:"op"`
+	Value string `json:"value"`
+}
+
+// Group combines conditions and nested groups by its Mode, like a compound
+// row in the macOS client's rule editor.
+type Group struct {
+	Mode       Mode        `json:"mode"`
+	Conditions []Condition `json:"conditions,omitempty"`
+	Groups     []Group     `json:"groups,omitempty"`
+}
+
+// HasConditions reports whether g or any group nested in it has a
+// condition.
+func (g Group) HasConditions() bool {
+	return len(g.Conditions) > 0 || slices.ContainsFunc(g.Groups, Group.HasConditions)
+}
+
+func (g Group) matches(t torrent.Torrent) bool {
+	results := make([]bool, 0, len(g.Conditions)+len(g.Groups))
+	for _, c := range g.Conditions {
+		results = append(results, c.matches(t))
+	}
+	for _, sub := range g.Groups {
+		results = append(results, sub.matches(t))
+	}
+	switch g.Mode {
+	case ModeAll:
+		return !slices.Contains(results, false)
+	case ModeAny:
+		return slices.Contains(results, true)
+	case ModeNone:
+		return !slices.Contains(results, true)
+	}
+	return false
+}
+
+// String renders g as one line, such as
+// "tracker is example.org and (extension is mkv or extension is mp4)".
+func (g Group) String() string {
+	var parts []string
+	for _, c := range g.Conditions {
+		parts = append(parts, fmt.Sprintf("%s %s %s", c.Field, strings.ReplaceAll(string(c.Op), "_", " "), c.Value))
+	}
+	for _, sub := range g.Groups {
+		s := sub.String()
+		if sub.Mode != ModeNone && len(sub.Conditions)+len(sub.Groups) > 1 {
+			s = "(" + s + ")"
+		}
+		parts = append(parts, s)
+	}
+	switch g.Mode {
+	case ModeAny:
+		return strings.Join(parts, " or ")
+	case ModeNone:
+		return "none of (" + strings.Join(parts, ", ") + ")"
+	}
+	return strings.Join(parts, " and ")
 }
 
 // Rule is a named group with auto-assign conditions and an optional
@@ -71,13 +132,12 @@ type Condition struct {
 // torrents in the default location, like a macOS group without a custom
 // download location.
 type Rule struct {
-	ID         int64
-	Name       string
-	Color      string
-	Priority   int64
-	Mode       Mode
-	Path       string
-	Conditions []Condition
+	ID       int64
+	Name     string
+	Color    string
+	Priority int64
+	Path     string
+	Match    Group
 }
 
 // Placement is where a torrent should live and which group it belongs to.
@@ -92,19 +152,7 @@ type Placement struct {
 // Matches reports whether t satisfies r's conditions. A rule without
 // conditions never matches, so it can only be assigned manually.
 func (r Rule) Matches(t torrent.Torrent) bool {
-	if len(r.Conditions) == 0 {
-		return false
-	}
-	for _, c := range r.Conditions {
-		ok := c.matches(t)
-		if ok && r.Mode == ModeAny {
-			return true
-		}
-		if !ok && r.Mode == ModeAll {
-			return false
-		}
-	}
-	return r.Mode == ModeAll
+	return r.Match.HasConditions() && r.Match.matches(t)
 }
 
 func (c Condition) matches(t torrent.Torrent) bool {
@@ -207,22 +255,39 @@ func (r Rule) Validate() error {
 	if !colorPattern.MatchString(r.Color) {
 		errs = append(errs, fmt.Errorf("color %q must look like #4f8cff", r.Color))
 	}
-	if r.Mode != ModeAll && r.Mode != ModeAny {
-		errs = append(errs, fmt.Errorf("mode %q must be all or any", r.Mode))
-	}
 	if r.Path != "" && !strings.HasPrefix(r.Path, "{root}") && !path.IsAbs(r.Path) {
 		errs = append(errs, fmt.Errorf("path %q must start with {root} or /", r.Path))
 	}
-	for i, c := range r.Conditions {
+	var n int
+	errs = append(errs, r.Match.validate(true, &n)...)
+	return errors.Join(errs...)
+}
+
+// validate checks g and its nested groups. Conditions are numbered in
+// display order through n. Only the top-level group may be empty, which
+// makes a rule that is assigned by hand.
+func (g Group) validate(top bool, n *int) []error {
+	var errs []error
+	if !slices.Contains(Modes, g.Mode) {
+		errs = append(errs, fmt.Errorf("mode %q must be all, any or none", g.Mode))
+	}
+	if !top && len(g.Conditions)+len(g.Groups) == 0 {
+		errs = append(errs, errors.New("nested groups need at least one condition"))
+	}
+	for _, c := range g.Conditions {
+		*n++
 		if !slices.Contains(Fields, c.Field) {
-			errs = append(errs, fmt.Errorf("condition %d: unknown field %q", i+1, c.Field))
+			errs = append(errs, fmt.Errorf("condition %d: unknown field %q", *n, c.Field))
 		}
 		if !slices.Contains(Ops, c.Op) {
-			errs = append(errs, fmt.Errorf("condition %d: unknown comparison %q", i+1, c.Op))
+			errs = append(errs, fmt.Errorf("condition %d: unknown comparison %q", *n, c.Op))
 		}
 		if c.Value == "" {
-			errs = append(errs, fmt.Errorf("condition %d: value is required", i+1))
+			errs = append(errs, fmt.Errorf("condition %d: value is required", *n))
 		}
 	}
-	return errors.Join(errs...)
+	for _, sub := range g.Groups {
+		errs = append(errs, sub.validate(false, n)...)
+	}
+	return errs
 }

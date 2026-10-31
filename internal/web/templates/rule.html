@@ -28,20 +28,7 @@
     <input name="path" value="{{.Rule.Path}}" placeholder="{root}/{tracker}">
     <small>Use <code>{root}</code> and <code>{tracker}</code>. Leave empty for the default location.</small>
   </label>
-  <fieldset>
-    <legend>
-      Match
-      <select name="mode">
-        <option value="all" {{if eq .Rule.Mode "all"}}selected{{end}}>all</option>
-        <option value="any" {{if eq .Rule.Mode "any"}}selected{{end}}>any</option>
-      </select>
-      of these conditions
-    </legend>
-    <div id="conditions" class="stack">
-      {{range .Conditions}}{{template "condition" .}}{{end}}
-    </div>
-    <button type="button" hx-get="/rules/condition" hx-target="#conditions" hx-swap="beforeend">Add condition</button>
-  </fieldset>
+  {{template "group" .Match}}
   <div class="row">
     <button class="primary">Save</button>
     <a href="{{or .Return "/rules"}}" class="button">Cancel</a>
@@ -49,15 +36,43 @@
 </form>
 <aside>
   <h2>On save</h2>
-  <div id="preview" hx-post="/rules/preview" hx-include="#rule-form" hx-trigger="load, input from:#rule-form delay:300ms, change from:#rule-form, htmx:afterSettle from:#conditions">
+  <div id="preview" hx-post="/rules/preview" hx-include="#rule-form" hx-trigger="load, input from:#rule-form delay:300ms, change from:#rule-form, htmx:afterSettle from:#rule-form">
     <p class="hint">Loading…</p>
   </div>
 </aside>
 </div>
 {{end}}
 
+{{/* group is a set of conditions and nested groups combined by a mode. The
+   top-level group has no parent and can't be removed. */}}
+{{define "group"}}
+<fieldset class="cond-group{{if .Parent}} nested{{end}}">
+  <input type="hidden" name="group" value="{{.ID}}">
+  <input type="hidden" name="group_parent" value="{{.Parent}}">
+  <legend class="row">
+    Match
+    <select name="group_mode">
+      {{range .Modes}}<option value="{{.}}" {{if eq . $.Mode}}selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    of {{if .Parent}}these{{else}}these conditions{{end}}
+    {{if .Parent}}<button type="button" class="danger" title="Remove group" hx-on:click="const f = this.closest('form'); this.closest('.cond-group').remove(); htmx.trigger(f, 'change')">✕</button>{{end}}
+  </legend>
+  <div id="conds-{{.ID}}" class="stack">
+    {{range .Conditions}}{{template "condition" .}}{{end}}
+  </div>
+  <div id="groups-{{.ID}}" class="stack">
+    {{range .Groups}}{{template "group" .}}{{end}}
+  </div>
+  <div class="row">
+    <button type="button" hx-get="/rules/condition?group={{.ID}}" hx-target="#conds-{{.ID}}" hx-swap="beforeend">Add condition</button>
+    <button type="button" hx-get="/rules/group?parent={{.ID}}" hx-target="#groups-{{.ID}}" hx-swap="beforeend">Add group</button>
+  </div>
+</fieldset>
+{{end}}
+
 {{define "condition"}}
 <div class="condition row">
+  <input type="hidden" name="cond_group" value="{{.Group}}">
   <select name="field">
     {{range .Fields}}<option value="{{.}}" {{if eq . $.Condition.Field}}selected{{end}}>{{.}}</option>{{end}}
   </select>

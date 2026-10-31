@@ -2,8 +2,10 @@ package web
 
 import (
 	"cmp"
+	"crypto/rand"
 	"errors"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,24 +38,52 @@ var swatches = []swatch{
 
 type ruleForm struct {
 	chrome
-	Rule       rules.Rule
-	Conditions []conditionRow
-	Errors     []string
+	Rule   rules.Rule
+	Match  groupView
+	Errors []string
 	// Return is where to go after saving or cancelling, when the editor was
 	// opened from somewhere other than the rules list.
 	Return   string
 	Swatches []swatch
 }
 
+// blankCondition is the row the editor adds for "Add condition".
+var blankCondition = rules.Condition{Field: rules.FieldExtension, Op: rules.OpIs}
+
 // conditionRow is one editable condition with the choices for its selects.
+// Group is the ID of the group it belongs to.
 type conditionRow struct {
 	Condition rules.Condition
+	Group     string
 	Fields    []rules.Field
 	Ops       []rules.Op
 }
 
-func newConditionRow(c rules.Condition) conditionRow {
-	return conditionRow{Condition: c, Fields: rules.Fields, Ops: rules.Ops}
+func newConditionRow(c rules.Condition, group string) conditionRow {
+	return conditionRow{Condition: c, Group: group, Fields: rules.Fields, Ops: rules.Ops}
+}
+
+// groupView is one editable group. ID ties the group to its rows and nested
+// groups in the posted form; IDs only need to be unique within a page.
+// Parent is empty for the top-level group.
+type groupView struct {
+	ID         string
+	Parent     string
+	Mode       rules.Mode
+	Modes      []rules.Mode
+	Conditions []conditionRow
+	Groups     []groupView
+}
+
+func newGroupView(g rules.Group, parent string) groupView {
+	v := groupView{ID: rand.Text(), Parent: parent, Mode: g.Mode, Modes: rules.Modes}
+	for _, c := range g.Conditions {
+		v.Conditions = append(v.Conditions, newConditionRow(c, v.ID))
+	}
+	for _, sub := range g.Groups {
+		v.Groups = append(v.Groups, newGroupView(sub, v.ID))
+	}
+	return v
 }
 
 func (s *Server) ruleForm(req *http.Request, r rules.Rule, err error) ruleForm {
@@ -61,10 +91,7 @@ func (s *Server) ruleForm(req *http.Request, r rules.Rule, err error) ruleForm {
 	if r.ID == 0 {
 		title = "New rule"
 	}
-	f := ruleForm{chrome: chrome{title, "rules"}, Rule: r, Return: returnTo(req), Swatches: swatches}
-	for _, c := range r.Conditions {
-		f.Conditions = append(f.Conditions, newConditionRow(c))
-	}
+	f := ruleForm{chrome: chrome{title, "rules"}, Rule: r, Match: newGroupView(r.Match, ""), Return: returnTo(req), Swatches: swatches}
 	if err != nil {
 		f.Errors = strings.Split(err.Error(), "\n")
 	}
@@ -90,10 +117,9 @@ func (s *Server) rulesPage(w http.ResponseWriter, r *http.Request, code int, err
 
 func (s *Server) newRule(w http.ResponseWriter, r *http.Request) {
 	s.page(w, http.StatusOK, "rule", s.ruleForm(r, rules.Rule{
-		Color:      defaultColor,
-		Mode:       rules.ModeAll,
-		Path:       "{root}/{tracker}/",
-		Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs}},
+		Color: defaultColor,
+		Path:  "{root}/{tracker}/",
+		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{blankCondition}},
 	}, nil))
 }
 
@@ -127,30 +153,80 @@ func (s *Server) findRule(r *http.Request) (rules.Rule, bool, error) {
 	return rs[i], true, nil
 }
 
-// condition renders an empty condition row for the "Add condition" button.
+// condition renders an empty condition row for a group's "Add condition"
+// button.
 func (s *Server) condition(w http.ResponseWriter, r *http.Request) {
-	s.render(w, http.StatusOK, "rule", "condition", newConditionRow(rules.Condition{Field: rules.FieldExtension, Op: rules.OpIs}))
+	s.render(w, http.StatusOK, "rule", "condition", newConditionRow(blankCondition, r.URL.Query().Get("group")))
 }
 
-// parseRule reads a rule from the editor form. Conditions arrive as parallel
-// field/op/value lists, one entry per row.
+// group renders a nested group holding one empty condition for a group's
+// "Add group" button.
+func (s *Server) group(w http.ResponseWriter, r *http.Request) {
+	g := rules.Group{Mode: rules.ModeAny, Conditions: []rules.Condition{blankCondition}}
+	s.render(w, http.StatusOK, "rule", "group", newGroupView(g, r.URL.Query().Get("parent")))
+}
+
+// parseRule reads a rule from the editor form.
 func parseRule(r *http.Request) rules.Rule {
 	f := r.PostForm
-	rule := rules.Rule{
+	return rules.Rule{
 		Name:  strings.TrimSpace(f.Get("name")),
 		Color: f.Get("color"),
-		Mode:  rules.Mode(f.Get("mode")),
 		Path:  strings.TrimSpace(f.Get("path")),
+		Match: parseGroups(f),
 	}
-	fields, ops, values := f["field"], f["op"], f["value"]
-	for i := range min(len(fields), len(ops), len(values)) {
-		rule.Conditions = append(rule.Conditions, rules.Condition{
-			Field: rules.Field(fields[i]),
-			Op:    rules.Op(ops[i]),
-			Value: strings.TrimSpace(values[i]),
-		})
+}
+
+// parseGroups rebuilds the condition tree from the editor form. Each group
+// posts parallel group/group_parent/group_mode entries, and each condition
+// row posts its group's ID in cond_group alongside field, op and value, so
+// rows and groups can be removed in the browser in any order.
+//
+// The first group without a parent is the top level. Every other group has
+// exactly one parent and duplicate IDs are ignored, so walking down from the
+// top level visits a tree; groups that don't hang off it, including crafted
+// cycles, are dropped.
+func parseGroups(f url.Values) rules.Group {
+	ids, parents, modes := f["group"], f["group_parent"], f["group_mode"]
+	groups := make(map[string]*rules.Group)
+	children := make(map[string][]string)
+	var top string
+	for i := range min(len(ids), len(parents), len(modes)) {
+		id := ids[i]
+		if _, dup := groups[id]; dup || id == "" {
+			continue
+		}
+		groups[id] = &rules.Group{Mode: rules.Mode(modes[i])}
+		if parents[i] == "" && top == "" {
+			top = id
+			continue
+		}
+		children[parents[i]] = append(children[parents[i]], id)
 	}
-	return rule
+	if top == "" {
+		return rules.Group{Mode: rules.ModeAll}
+	}
+
+	owners, fields, ops, values := f["cond_group"], f["field"], f["op"], f["value"]
+	for i := range min(len(owners), len(fields), len(ops), len(values)) {
+		if g, ok := groups[owners[i]]; ok {
+			g.Conditions = append(g.Conditions, rules.Condition{
+				Field: rules.Field(fields[i]),
+				Op:    rules.Op(ops[i]),
+				Value: strings.TrimSpace(values[i]),
+			})
+		}
+	}
+
+	var build func(id string) rules.Group
+	build = func(id string) rules.Group {
+		g := *groups[id]
+		for _, child := range children[id] {
+			g.Groups = append(g.Groups, build(child))
+		}
+		return g
+	}
+	return build(top)
 }
 
 func (s *Server) saveRule(w http.ResponseWriter, r *http.Request) {
@@ -348,7 +424,7 @@ func (s *Server) previewRule(w http.ResponseWriter, r *http.Request) {
 		Changes []intake.Change
 		Manual  bool
 		Error   string
-	}{Manual: len(rule.Conditions) == 0}
+	}{Manual: !rule.Match.HasConditions()}
 	data.Changes, err = s.changes(r, rs, trackers, rule.ID)
 	if err != nil {
 		data.Error = err.Error()

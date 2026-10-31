@@ -141,6 +141,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /rules", s.rules)
 	mux.HandleFunc("GET /rules/new", s.newRule)
 	mux.HandleFunc("GET /rules/condition", s.condition)
+	mux.HandleFunc("GET /rules/group", s.group)
 	mux.HandleFunc("POST /rules/preview", s.previewRule)
 	mux.HandleFunc("POST /rules/new", s.saveRule)
 	mux.HandleFunc("GET /rules/{id}", s.editRule)

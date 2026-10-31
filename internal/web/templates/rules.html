@@ -12,10 +12,7 @@
     <div class="rule-main">
       <a class="rule-name" href="/rules/{{$r.ID}}">{{$r.Name}}</a>
       <div class="rule-detail">
-        {{if $r.Conditions}}
-          {{if eq $r.Mode "any"}}Any of{{else}}All of{{end}}:
-          {{range $j, $c := $r.Conditions}}{{if $j}}, {{end}}<code>{{$c.Field}} {{$c.Op}} {{$c.Value}}</code>{{end}}
-        {{else}}Manual only{{end}}
+        {{if $r.Match.HasConditions}}<code>{{$r.Match}}</code>{{else}}Manual only{{end}}
       </div>
       <div class="rule-detail">→ <code>{{or $r.Path "{root}/{tracker}"}}</code></div>
     </div>

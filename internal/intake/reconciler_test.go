@@ -42,9 +42,8 @@ func setup(t *testing.T, fresh bool) (*store.Store, int64) {
 
 	require.NoError(t, st.SetTracker(ctx, "flacsfor.me", "red"))
 	id, err := st.SaveRule(ctx, rules.Rule{
-		Name: "🎵 Audio", Color: "#ff8800", Mode: rules.ModeAll,
-		Path:       "{root}/{tracker}/audio",
-		Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}},
+		Name: "🎵 Audio", Color: "#ff8800", Path: "{root}/{tracker}/audio",
+		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}}},
 	})
 	require.NoError(t, err)
 	if !fresh {

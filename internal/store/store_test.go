@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -22,15 +23,18 @@ func TestRules(t *testing.T) {
 	s := open(t, filepath.Join(t.TempDir(), "nested", "test.db"))
 
 	audio := rules.Rule{
-		Name: "🎵 Audio", Color: "#ff8800", Priority: 2, Mode: rules.ModeAll,
-		Path:       "{root}/{tracker}/audio",
-		Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}},
+		Name: "🎵 Audio", Color: "#ff8800", Priority: 2, Path: "{root}/{tracker}/audio",
+		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}}},
 	}
 	video := rules.Rule{
-		Name: "Video", Color: "#4f8cff", Priority: 1, Mode: rules.ModeAny,
-		Conditions: []rules.Condition{
-			{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mkv"},
-			{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mp4"},
+		Name: "Video", Color: "#4f8cff", Priority: 1,
+		Match: rules.Group{
+			Mode:       rules.ModeAll,
+			Conditions: []rules.Condition{{Field: rules.FieldTracker, Op: rules.OpIs, Value: "torrentleech.org"}},
+			Groups: []rules.Group{{Mode: rules.ModeAny, Conditions: []rules.Condition{
+				{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mkv"},
+				{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mp4"},
+			}}},
 		},
 	}
 	var err error
@@ -44,20 +48,20 @@ func TestRules(t *testing.T) {
 	require.Equal(t, []rules.Rule{video, audio}, got)
 
 	audio.Priority = 0
-	audio.Conditions = []rules.Condition{{Field: rules.FieldName, Op: rules.OpContains, Value: "flac"}}
+	audio.Match.Conditions = []rules.Condition{{Field: rules.FieldName, Op: rules.OpContains, Value: "flac"}}
 	_, err = s.SaveRule(ctx, audio)
 	require.NoError(t, err)
 	got, err = s.Rules(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []rules.Rule{audio, video}, got)
 
-	_, err = s.SaveRule(ctx, rules.Rule{ID: 999, Name: "Ghost", Color: "#000", Mode: rules.ModeAll})
+	_, err = s.SaveRule(ctx, rules.Rule{ID: 999, Name: "Ghost", Color: "#000", Match: rules.Group{Mode: rules.ModeAll}})
 	require.ErrorIs(t, err, ErrNotFound)
 
-	_, err = s.SaveRule(ctx, rules.Rule{Name: "🎵 Audio", Color: "#000", Mode: rules.ModeAll})
+	_, err = s.SaveRule(ctx, rules.Rule{Name: "🎵 Audio", Color: "#000", Match: rules.Group{Mode: rules.ModeAll}})
 	require.Error(t, err, "rule names are unique")
 
-	_, err = s.SaveRule(ctx, rules.Rule{Name: "Bad", Color: "#000", Mode: rules.Mode("some")})
+	_, err = s.SaveRule(ctx, rules.Rule{Name: "Bad", Color: "#000", Match: rules.Group{Mode: rules.Mode("some")}})
 	require.Error(t, err, "mode is constrained")
 }
 
@@ -66,8 +70,8 @@ func TestDeleteRuleKeepsAssignment(t *testing.T) {
 	s := open(t, filepath.Join(t.TempDir(), "test.db"))
 
 	id, err := s.SaveRule(ctx, rules.Rule{
-		Name: "Video", Color: "#4f8cff", Mode: rules.ModeAll,
-		Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mkv"}},
+		Name: "Video", Color: "#4f8cff",
+		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mkv"}}},
 	})
 	require.NoError(t, err)
 	require.NoError(t, s.Assign(ctx, Assignment{Hash: "abc", RuleID: id, Manual: true}))
@@ -147,7 +151,7 @@ func TestReorderRules(t *testing.T) {
 
 	var ids []int64
 	for i, name := range []string{"a", "b", "c"} {
-		id, err := s.SaveRule(ctx, rules.Rule{Name: name, Color: "#000000", Priority: int64(i), Mode: rules.ModeAll})
+		id, err := s.SaveRule(ctx, rules.Rule{Name: name, Color: "#000000", Priority: int64(i), Match: rules.Group{Mode: rules.ModeAll}})
 		require.NoError(t, err)
 		ids = append(ids, id)
 	}
@@ -160,4 +164,75 @@ func TestReorderRules(t *testing.T) {
 		names = append(names, r.Name)
 	}
 	require.Equal(t, []string{"c", "a", "b"}, names)
+}
+
+// TestMigrateNestedConditions upgrades rules written under the flat
+// conditions schema and checks they keep their meaning and order.
+func TestMigrateNestedConditions(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "test.db")
+	sqlDB, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	p, err := provider(sqlDB)
+	require.NoError(t, err)
+	_, err = p.UpTo(ctx, 2)
+	require.NoError(t, err)
+	_, err = sqlDB.ExecContext(ctx, `
+		INSERT INTO rules (id, name, color, priority, mode, path) VALUES
+			(1, '🎬 Video', '#007aff', 1, 'any', '{root}/{tracker}/video'),
+			(2, 'Manual', '#8e8e93', 2, 'all', '');
+		INSERT INTO rule_conditions (rule_id, field, op, value) VALUES
+			(1, 'extension', 'is', 'mkv'),
+			(1, 'name', 'contains', '1080p');
+		INSERT INTO assignments (hash, rule_id, manual) VALUES ('abc', 1, FALSE);
+	`)
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	s := open(t, path)
+	got, err := s.Rules(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []rules.Rule{
+		{
+			ID: 1, Name: "🎬 Video", Color: "#007aff", Priority: 1, Path: "{root}/{tracker}/video",
+			Match: rules.Group{Mode: rules.ModeAny, Conditions: []rules.Condition{
+				{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mkv"},
+				{Field: rules.FieldName, Op: rules.OpContains, Value: "1080p"},
+			}},
+		},
+		{ID: 2, Name: "Manual", Color: "#8e8e93", Priority: 2, Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{}}},
+	}, got)
+
+	assignments, err := s.Assignments(ctx)
+	require.NoError(t, err)
+	require.Equal(t, Assignment{Hash: "abc", RuleID: 1}, assignments["abc"], "assignments survive")
+}
+
+func TestMigrateNestedConditionsDown(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "test.db")
+	s, err := Open(ctx, path)
+	require.NoError(t, err)
+	_, err = s.SaveRule(ctx, rules.Rule{
+		Name: "Video", Color: "#007aff",
+		Match: rules.Group{
+			Mode:       rules.ModeAny,
+			Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mkv"}},
+			Groups:     []rules.Group{{Mode: rules.ModeAll, Conditions: []rules.Condition{{Field: rules.FieldName, Op: rules.OpIs, Value: "x"}}}},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.Close())
+
+	sqlDB, err := sql.Open("sqlite", "file:"+path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	p, err := provider(sqlDB)
+	require.NoError(t, err)
+	_, err = p.DownTo(ctx, 2)
+	require.NoError(t, err)
+
+	var mode, field, value string
+	require.NoError(t, sqlDB.QueryRowContext(ctx, `SELECT r.mode, c.field, c.value FROM rules r JOIN rule_conditions c ON c.rule_id = r.id`).Scan(&mode, &field, &value))
+	require.Equal(t, []string{"any", "extension", "mkv"}, []string{mode, field, value}, "top-level conditions survive; nested groups are dropped")
 }

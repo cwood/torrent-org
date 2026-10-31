@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -60,14 +61,23 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	return &Store{db: sqlDB, q: db.New(sqlDB)}, nil
 }
 
-func migrate(ctx context.Context, sqlDB *sql.DB) error {
+// provider runs the embedded migrations against sqlDB.
+func provider(sqlDB *sql.DB) (*goose.Provider, error) {
 	fsys, err := fs.Sub(migrations, "migrations")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	p, err := goose.NewProvider(goose.DialectSQLite3, sqlDB, fsys)
 	if err != nil {
-		return fmt.Errorf("create migration provider: %w", err)
+		return nil, fmt.Errorf("create migration provider: %w", err)
+	}
+	return p, nil
+}
+
+func migrate(ctx context.Context, sqlDB *sql.DB) error {
+	p, err := provider(sqlDB)
+	if err != nil {
+		return err
 	}
 	if _, err := p.Up(ctx); err != nil {
 		return fmt.Errorf("migrate: %w", err)
@@ -86,26 +96,13 @@ func (s *Store) Rules(ctx context.Context) ([]rules.Rule, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list rules: %w", err)
 	}
-	conds, err := s.q.ListConditions(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list conditions: %w", err)
-	}
-
-	byRule := make(map[int64][]rules.Condition)
-	for _, c := range conds {
-		byRule[c.RuleID] = append(byRule[c.RuleID], rules.Condition{Field: c.Field, Op: c.Op, Value: c.Value})
-	}
 	out := make([]rules.Rule, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, rules.Rule{
-			ID:         r.ID,
-			Name:       r.Name,
-			Color:      r.Color,
-			Priority:   r.Priority,
-			Mode:       r.Mode,
-			Path:       r.Path,
-			Conditions: byRule[r.ID],
-		})
+		rule := rules.Rule{ID: r.ID, Name: r.Name, Color: r.Color, Priority: r.Priority, Path: r.Path}
+		if err := json.Unmarshal([]byte(r.Conditions), &rule.Match); err != nil {
+			return nil, fmt.Errorf("rule %d conditions: %w", r.ID, err)
+		}
+		out = append(out, rule)
 	}
 	return out, nil
 }
@@ -113,42 +110,21 @@ func (s *Store) Rules(ctx context.Context) ([]rules.Rule, error) {
 // SaveRule creates r when r.ID is 0 and updates it otherwise, replacing its
 // conditions. It returns the rule's ID.
 func (s *Store) SaveRule(ctx context.Context, r rules.Rule) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+	conds, err := json.Marshal(r.Match)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("encode conditions: %w", err)
 	}
-	// Rollback after a successful Commit returns sql.ErrTxDone and is harmless.
-	defer func() { _ = tx.Rollback() }()
-	q := s.q.WithTx(tx)
-
-	id, err := saveRule(ctx, q, r)
-	if err != nil {
-		return 0, err
-	}
-	if err := q.DeleteConditions(ctx, id); err != nil {
-		return 0, fmt.Errorf("clear conditions: %w", err)
-	}
-	for _, c := range r.Conditions {
-		err := q.CreateCondition(ctx, db.CreateConditionParams{RuleID: id, Field: c.Field, Op: c.Op, Value: c.Value})
-		if err != nil {
-			return 0, fmt.Errorf("create condition: %w", err)
-		}
-	}
-	return id, tx.Commit()
-}
-
-func saveRule(ctx context.Context, q *db.Queries, r rules.Rule) (int64, error) {
 	if r.ID == 0 {
-		id, err := q.CreateRule(ctx, db.CreateRuleParams{
-			Name: r.Name, Color: r.Color, Priority: r.Priority, Mode: r.Mode, Path: r.Path,
+		id, err := s.q.CreateRule(ctx, db.CreateRuleParams{
+			Name: r.Name, Color: r.Color, Priority: r.Priority, Path: r.Path, Conditions: string(conds),
 		})
 		if err != nil {
 			return 0, fmt.Errorf("create rule: %w", err)
 		}
 		return id, nil
 	}
-	n, err := q.UpdateRule(ctx, db.UpdateRuleParams{
-		Name: r.Name, Color: r.Color, Priority: r.Priority, Mode: r.Mode, Path: r.Path, ID: r.ID,
+	n, err := s.q.UpdateRule(ctx, db.UpdateRuleParams{
+		Name: r.Name, Color: r.Color, Priority: r.Priority, Path: r.Path, Conditions: string(conds), ID: r.ID,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("update rule: %w", err)

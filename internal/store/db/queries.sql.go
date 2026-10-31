@@ -8,43 +8,20 @@ package db
 import (
 	"context"
 	"database/sql"
-
-	"github.com/cwood/torrent-org/internal/rules"
 )
 
-const createCondition = `-- name: CreateCondition :exec
-INSERT INTO rule_conditions (rule_id, field, op, value) VALUES (?, ?, ?, ?)
-`
-
-type CreateConditionParams struct {
-	RuleID int64
-	Field  rules.Field
-	Op     rules.Op
-	Value  string
-}
-
-func (q *Queries) CreateCondition(ctx context.Context, arg CreateConditionParams) error {
-	_, err := q.db.ExecContext(ctx, createCondition,
-		arg.RuleID,
-		arg.Field,
-		arg.Op,
-		arg.Value,
-	)
-	return err
-}
-
 const createRule = `-- name: CreateRule :one
-INSERT INTO rules (name, color, priority, mode, path)
+INSERT INTO rules (name, color, priority, path, conditions)
 VALUES (?, ?, ?, ?, ?)
 RETURNING id
 `
 
 type CreateRuleParams struct {
-	Name     string
-	Color    string
-	Priority int64
-	Mode     rules.Mode
-	Path     string
+	Name       string
+	Color      string
+	Priority   int64
+	Path       string
+	Conditions string
 }
 
 func (q *Queries) CreateRule(ctx context.Context, arg CreateRuleParams) (int64, error) {
@@ -52,8 +29,8 @@ func (q *Queries) CreateRule(ctx context.Context, arg CreateRuleParams) (int64, 
 		arg.Name,
 		arg.Color,
 		arg.Priority,
-		arg.Mode,
 		arg.Path,
+		arg.Conditions,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -66,15 +43,6 @@ DELETE FROM assignments WHERE hash = ?
 
 func (q *Queries) DeleteAssignment(ctx context.Context, hash string) error {
 	_, err := q.db.ExecContext(ctx, deleteAssignment, hash)
-	return err
-}
-
-const deleteConditions = `-- name: DeleteConditions :exec
-DELETE FROM rule_conditions WHERE rule_id = ?
-`
-
-func (q *Queries) DeleteConditions(ctx context.Context, ruleID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteConditions, ruleID)
 	return err
 }
 
@@ -134,41 +102,8 @@ func (q *Queries) ListAssignments(ctx context.Context) ([]Assignment, error) {
 	return items, nil
 }
 
-const listConditions = `-- name: ListConditions :many
-SELECT id, rule_id, field, op, value FROM rule_conditions ORDER BY rule_id, id
-`
-
-func (q *Queries) ListConditions(ctx context.Context) ([]RuleCondition, error) {
-	rows, err := q.db.QueryContext(ctx, listConditions)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []RuleCondition
-	for rows.Next() {
-		var i RuleCondition
-		if err := rows.Scan(
-			&i.ID,
-			&i.RuleID,
-			&i.Field,
-			&i.Op,
-			&i.Value,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listRules = `-- name: ListRules :many
-SELECT id, name, color, priority, mode, path FROM rules ORDER BY priority, id
+SELECT id, name, color, priority, path, conditions FROM rules ORDER BY priority, id
 `
 
 func (q *Queries) ListRules(ctx context.Context) ([]Rule, error) {
@@ -185,8 +120,8 @@ func (q *Queries) ListRules(ctx context.Context) ([]Rule, error) {
 			&i.Name,
 			&i.Color,
 			&i.Priority,
-			&i.Mode,
 			&i.Path,
+			&i.Conditions,
 		); err != nil {
 			return nil, err
 		}
@@ -253,17 +188,17 @@ func (q *Queries) SetRulePriority(ctx context.Context, arg SetRulePriorityParams
 
 const updateRule = `-- name: UpdateRule :execrows
 UPDATE rules
-SET name = ?, color = ?, priority = ?, mode = ?, path = ?
+SET name = ?, color = ?, priority = ?, path = ?, conditions = ?
 WHERE id = ?
 `
 
 type UpdateRuleParams struct {
-	Name     string
-	Color    string
-	Priority int64
-	Mode     rules.Mode
-	Path     string
-	ID       int64
+	Name       string
+	Color      string
+	Priority   int64
+	Path       string
+	Conditions string
+	ID         int64
 }
 
 func (q *Queries) UpdateRule(ctx context.Context, arg UpdateRuleParams) (int64, error) {
@@ -271,8 +206,8 @@ func (q *Queries) UpdateRule(ctx context.Context, arg UpdateRuleParams) (int64, 
 		arg.Name,
 		arg.Color,
 		arg.Priority,
-		arg.Mode,
 		arg.Path,
+		arg.Conditions,
 		arg.ID,
 	)
 	if err != nil {

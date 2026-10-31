@@ -1,27 +1,18 @@
 -- name: ListRules :many
 SELECT * FROM rules ORDER BY priority, id;
 
--- name: ListConditions :many
-SELECT * FROM rule_conditions ORDER BY rule_id, id;
-
 -- name: CreateRule :one
-INSERT INTO rules (name, color, priority, mode, path)
+INSERT INTO rules (name, color, priority, path, conditions)
 VALUES (?, ?, ?, ?, ?)
 RETURNING id;
 
 -- name: UpdateRule :execrows
 UPDATE rules
-SET name = ?, color = ?, priority = ?, mode = ?, path = ?
+SET name = ?, color = ?, priority = ?, path = ?, conditions = ?
 WHERE id = ?;
 
 -- name: DeleteRule :exec
 DELETE FROM rules WHERE id = ?;
-
--- name: CreateCondition :exec
-INSERT INTO rule_conditions (rule_id, field, op, value) VALUES (?, ?, ?, ?);
-
--- name: DeleteConditions :exec
-DELETE FROM rule_conditions WHERE rule_id = ?;
 
 -- name: ListTrackers :many
 SELECT * FROM trackers ORDER BY host;

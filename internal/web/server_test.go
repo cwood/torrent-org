@@ -82,9 +82,8 @@ func (h *harness) post(path string, form url.Values) *httptest.ResponseRecorder 
 func (h *harness) audioRule() rules.Rule {
 	h.t.Helper()
 	r := rules.Rule{
-		Name: "🎵 Audio", Color: "#ff8800", Priority: 1, Mode: rules.ModeAll,
-		Path:       "{root}/{tracker}/audio",
-		Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}},
+		Name: "🎵 Audio", Color: "#ff8800", Priority: 1, Path: "{root}/{tracker}/audio",
+		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}}},
 	}
 	var err error
 	r.ID, err = h.store.SaveRule(h.t.Context(), r)
@@ -296,15 +295,20 @@ func TestEvents(t *testing.T) {
 	require.Contains(t, data.String(), "Artist - Album")
 }
 
+// ruleValues is the editor form for a rule matching any of extension mkv or
+// mp4, in a single top-level group "top".
 func ruleValues(name string, extra url.Values) url.Values {
 	f := url.Values{
-		"name":  {name},
-		"color": {"#123456"},
-		"mode":  {"any"},
-		"path":  {"{root}/{tracker}/video"},
-		"field": {"extension", "extension"},
-		"op":    {"is", "is"},
-		"value": {"mkv", " mp4 "},
+		"name":         {name},
+		"color":        {"#123456"},
+		"path":         {"{root}/{tracker}/video"},
+		"group":        {"top"},
+		"group_parent": {""},
+		"group_mode":   {"any"},
+		"cond_group":   {"top", "top"},
+		"field":        {"extension", "extension"},
+		"op":           {"is", "is"},
+		"value":        {"mkv", " mp4 "},
 	}
 	for k, v := range extra {
 		f[k] = v
@@ -325,11 +329,11 @@ func TestCreateRule(t *testing.T) {
 	got := rs[1]
 	got.ID = 0
 	require.Equal(t, rules.Rule{
-		Name: "🎬 Video", Color: "#123456", Priority: 2, Mode: rules.ModeAny, Path: "{root}/{tracker}/video",
-		Conditions: []rules.Condition{
+		Name: "🎬 Video", Color: "#123456", Priority: 2, Path: "{root}/{tracker}/video",
+		Match: rules.Group{Mode: rules.ModeAny, Conditions: []rules.Condition{
 			{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mkv"},
 			{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mp4"},
-		},
+		}},
 	}, got)
 }
 
@@ -376,6 +380,73 @@ func TestEditRule(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, h.get("/rules/999").Code)
 	require.Equal(t, http.StatusNotFound, h.post("/rules/999", ruleValues("x", nil)).Code)
+}
+
+func TestParseGroups(t *testing.T) {
+	cond := func(field rules.Field, value string) rules.Condition {
+		return rules.Condition{Field: field, Op: rules.OpIs, Value: value}
+	}
+	// Rows arrive in DOM order, so a nested group's rows can come before
+	// later rows of its parent.
+	f := url.Values{
+		"group":        {"top", "g2", "orphan", "loop", "top"},
+		"group_parent": {"", "top", "missing", "loop", "g2"},
+		"group_mode":   {"all", "any", "any", "any", "none"},
+		"cond_group":   {"top", "g2", "g2", "orphan", "loop", "top"},
+		"field":        {"tracker", "extension", "extension", "name", "name", "name"},
+		"op":           {"is", "is", "is", "is", "is", "is"},
+		"value":        {"torrentleech.org", "mkv", " mp4 ", "lost", "lost", "sample"},
+	}
+	require.Equal(t, rules.Group{
+		Mode:       rules.ModeAll,
+		Conditions: []rules.Condition{cond(rules.FieldTracker, "torrentleech.org"), cond(rules.FieldName, "sample")},
+		Groups: []rules.Group{{
+			Mode:       rules.ModeAny,
+			Conditions: []rules.Condition{cond(rules.FieldExtension, "mkv"), cond(rules.FieldExtension, "mp4")},
+		}},
+	}, parseGroups(f), "orphans, self-parented groups and duplicate IDs are dropped")
+
+	require.Equal(t, rules.Group{Mode: rules.ModeAll}, parseGroups(url.Values{}), "no groups is an empty rule")
+}
+
+func TestNestedRuleEditor(t *testing.T) {
+	h := newHarness(t)
+	form := ruleValues("🎬 Video", url.Values{
+		"group":        {"top", "inner"},
+		"group_parent": {"", "top"},
+		"group_mode":   {"all", "any"},
+		"cond_group":   {"top", "inner", "inner"},
+		"field":        {"tracker", "extension", "extension"},
+		"op":           {"is", "is", "is"},
+		"value":        {"torrentleech.org", "mkv", "mp4"},
+	})
+	require.Equal(t, http.StatusSeeOther, h.post("/rules/new", form).Code)
+	video := h.rules()[0]
+	require.Equal(t, "tracker is torrentleech.org and (extension is mkv or extension is mp4)", video.Match.String())
+
+	require.Contains(t, h.get("/rules").Body.String(), "<code>tracker is torrentleech.org and (extension is mkv or extension is mp4)</code>")
+	body := h.get("/rules/" + itoa(video.ID)).Body.String()
+	require.Contains(t, body, `<fieldset class="cond-group nested">`)
+	require.Contains(t, body, `<option value="none" >none</option>`)
+	require.Equal(t, 3, strings.Count(body, `name="cond_group"`))
+
+	res := h.post("/rules/new", ruleValues("Empty", url.Values{
+		"group": {"top", "inner"}, "group_parent": {"", "top"}, "group_mode": {"all", "any"},
+	}))
+	require.Equal(t, http.StatusUnprocessableEntity, res.Code)
+	require.Contains(t, res.Body.String(), "nested groups need at least one condition")
+}
+
+func TestAddGroupAndCondition(t *testing.T) {
+	h := newHarness(t)
+	body := h.get("/rules/group?parent=abc").Body.String()
+	require.Contains(t, body, `name="group_parent" value="abc"`)
+	require.Contains(t, body, `<option value="any" selected>any</option>`)
+	id := body[strings.Index(body, `name="group" value="`)+len(`name="group" value="`):]
+	id = id[:strings.Index(id, `"`)]
+	require.Contains(t, body, `name="cond_group" value="`+id+`"`, "the new group comes with one condition of its own")
+
+	require.Contains(t, h.get("/rules/condition?group=abc").Body.String(), `name="cond_group" value="abc"`)
 }
 
 func TestMoveAndDeleteRule(t *testing.T) {
@@ -441,8 +512,8 @@ func TestPreviewEditedRule(t *testing.T) {
 	h.client.EXPECT().Torrents(mock.Anything).Return(statuses, nil).Once()
 
 	form := ruleValues(audio.Name, url.Values{
-		"id": {itoa(audio.ID)}, "mode": {"all"}, "path": {"{root}/{tracker}/music"},
-		"field": {"extension"}, "op": {"is"}, "value": {"flac"},
+		"id": {itoa(audio.ID)}, "group_mode": {"all"}, "path": {"{root}/{tracker}/music"},
+		"cond_group": {"top"}, "field": {"extension"}, "op": {"is"}, "value": {"flac"},
 	})
 	body := h.post("/rules/preview", form).Body.String()
 	require.Contains(t, body, "<code>/data/torrents/red/audio</code> → <code>/data/torrents/red/music</code>")
