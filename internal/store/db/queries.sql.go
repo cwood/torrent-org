@@ -11,15 +11,14 @@ import (
 )
 
 const createRule = `-- name: CreateRule :one
-INSERT INTO rules (name, color, priority, path, conditions)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO rules (name, color, path, conditions)
+VALUES (?, ?, ?, ?)
 RETURNING id
 `
 
 type CreateRuleParams struct {
 	Name       string
 	Color      string
-	Priority   int64
 	Path       string
 	Conditions string
 }
@@ -28,7 +27,6 @@ func (q *Queries) CreateRule(ctx context.Context, arg CreateRuleParams) (int64, 
 	row := q.db.QueryRowContext(ctx, createRule,
 		arg.Name,
 		arg.Color,
-		arg.Priority,
 		arg.Path,
 		arg.Conditions,
 	)
@@ -103,7 +101,7 @@ func (q *Queries) ListAssignments(ctx context.Context) ([]Assignment, error) {
 }
 
 const listRules = `-- name: ListRules :many
-SELECT id, name, color, priority, path, conditions FROM rules ORDER BY priority, id
+SELECT id, name, color, path, conditions FROM rules ORDER BY name COLLATE NOCASE, id
 `
 
 func (q *Queries) ListRules(ctx context.Context) ([]Rule, error) {
@@ -119,7 +117,6 @@ func (q *Queries) ListRules(ctx context.Context) ([]Rule, error) {
 			&i.ID,
 			&i.Name,
 			&i.Color,
-			&i.Priority,
 			&i.Path,
 			&i.Conditions,
 		); err != nil {
@@ -172,30 +169,15 @@ func (q *Queries) RecordBaseline(ctx context.Context) error {
 	return err
 }
 
-const setRulePriority = `-- name: SetRulePriority :exec
-UPDATE rules SET priority = ? WHERE id = ?
-`
-
-type SetRulePriorityParams struct {
-	Priority int64
-	ID       int64
-}
-
-func (q *Queries) SetRulePriority(ctx context.Context, arg SetRulePriorityParams) error {
-	_, err := q.db.ExecContext(ctx, setRulePriority, arg.Priority, arg.ID)
-	return err
-}
-
 const updateRule = `-- name: UpdateRule :execrows
 UPDATE rules
-SET name = ?, color = ?, priority = ?, path = ?, conditions = ?
+SET name = ?, color = ?, path = ?, conditions = ?
 WHERE id = ?
 `
 
 type UpdateRuleParams struct {
 	Name       string
 	Color      string
-	Priority   int64
 	Path       string
 	Conditions string
 	ID         int64
@@ -205,7 +187,6 @@ func (q *Queries) UpdateRule(ctx context.Context, arg UpdateRuleParams) (int64, 
 	result, err := q.db.ExecContext(ctx, updateRule,
 		arg.Name,
 		arg.Color,
-		arg.Priority,
 		arg.Path,
 		arg.Conditions,
 		arg.ID,

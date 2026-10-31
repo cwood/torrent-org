@@ -12,35 +12,11 @@
   <summary><span class="layer-title">{{.Title}}</span>{{template "totals" .Totals}}</summary>
   {{range .Groups}}
   <details class="layer group" data-key="{{.Key}}" open{{with .Rule}} style="--rule: {{.Color}}"{{end}}>
-    <summary>{{if .Rule}}{{template "badge" .Rule}}{{else}}<span class="badge muted"><span class="dot none"></span>No rule</span>{{end}}{{template "totals" .Totals}}</summary>
+    <summary>{{if .Rule}}{{template "badge" .Rule}}{{else if eq .Key "ties"}}<span class="badge tie">⚠ Choose a rule</span>{{else}}<span class="badge muted"><span class="dot none"></span>No rule</span>{{end}}{{template "totals" .Totals}}</summary>
     {{range .Torrents}}{{template "torrent" .}}{{end}}
   </details>
   {{else}}<p class="empty">Nothing downloading.</p>
   {{end}}
 </details>
 {{end}}{{end}}
-{{end}}
-
-{{define "totals"}}
-<span class="count">{{.Count}}</span>
-{{with rate .Rate}}<span class="speed">{{if $.Up}}↑{{else}}↓{{end}} {{.}}</span>{{end}}
-{{with .ETA}}<span class="eta" title="When the slowest torrent should finish">done in ~{{remaining .}}</span>{{end}}
-{{with .Errors}}<span class="errors">⚠ {{.}} error{{if ne . 1}}s{{end}}</span>{{end}}
-{{end}}
-
-{{define "torrent"}}
-<div class="torrent{{if .Error}} errored{{end}}">
-  <a class="name" href="/torrents/{{.Hash}}" title="{{.DataPath}}">{{.Name}}</a>
-  <div class="meta">
-    {{if .Manual}}<span class="tag">manual</span>{{end}}
-    <span class="state state-{{.State}}">{{.State}}</span>
-    {{if not .Complete}}<span>{{percent .Progress}}%</span>{{end}}
-    {{with rate .RateDown}}<span class="speed">↓ {{.}}</span>{{end}}
-    {{with rate .RateUp}}<span class="speed">↑ {{.}}</span>{{end}}
-    {{if .ETA}}<span class="eta">~{{remaining .ETA}} left</span>{{else if eq .State "downloading"}}<span class="eta">stalled</span>{{end}}
-    {{template "reveal" .}}
-  </div>
-  <progress class="bar-{{.State}}{{if .Complete}} done{{end}}" max="100" value="{{percent .Progress}}" title="{{percent .Progress}}%"></progress>
-  {{with .Error}}<div class="error">{{.}}</div>{{end}}
-</div>
 {{end}}

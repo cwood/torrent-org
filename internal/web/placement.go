@@ -27,7 +27,7 @@ type picker struct {
 	Target string
 }
 
-// ruleset loads what placement decisions need: rules in priority order and
+// ruleset loads what placement decisions need: rules in name order and
 // tracker aliases.
 func (s *Server) ruleset(ctx context.Context) ([]rules.Rule, map[string]string, error) {
 	rs, err := s.store.Rules(ctx)

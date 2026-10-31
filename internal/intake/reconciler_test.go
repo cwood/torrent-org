@@ -299,3 +299,30 @@ func TestObserve(t *testing.T) {
 	r.observe([]torrent.Status{at("a", 1, ""), at("b", 1, "missing files")})
 	require.Empty(t, drain(), "unchanged torrents and removals log nothing")
 }
+
+func TestTiedTorrentLeftUnassigned(t *testing.T) {
+	st, _ := setup(t, false)
+	_, err := st.SaveRule(t.Context(), rules.Rule{
+		Name: "🎧 Lossless", Color: "#007aff",
+		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}}},
+	})
+	require.NoError(t, err)
+
+	album := status("new", "Album", "/home/me/Downloads", "", "01.flac")
+	client := torrentmock.NewClient(t)
+	client.EXPECT().Torrents(mock.Anything).Return([]torrent.Status{album}, nil).Twice()
+
+	r := NewReconciler(client, st, root)
+	drain := logged(t, r)
+	require.NoError(t, r.Reconcile(t.Context()))
+	require.NoError(t, r.Reconcile(t.Context()))
+	require.Empty(t, assignments(t, st), "a tie is never placed automatically")
+	got := drain()
+	require.Len(t, got, 1, "the tie is logged once")
+	require.Contains(t, got[0], `msg="torrent matches several rules equally; choose one in the UI"`)
+
+	rs, err := st.Rules(t.Context())
+	require.NoError(t, err)
+	assigned := map[string]store.Assignment{"new": {Hash: "new"}}
+	require.Empty(t, Plan([]torrent.Status{album}, assigned, rs, nil, root), "a tie never plans a move")
+}

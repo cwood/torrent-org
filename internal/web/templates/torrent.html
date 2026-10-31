@@ -9,7 +9,7 @@
     <dt>Tracker</dt><dd>{{$.Auto.Tracker}}</dd>
     <dt>Info hash</dt><dd><code>{{.Hash}}</code></dd>
     <dt>Now</dt><dd>{{template "badge" $.Rule}}{{if $.Manual}} <span class="tag">manual</span>{{end}} <code>{{.Dir}}</code> {{template "reveal" .}}</dd>
-    <dt>Rules pick</dt><dd>{{template "badge" $.Auto.Rule}} <code>{{$.Auto.Dir}}</code></dd>
+    <dt>Rules pick</dt><dd>{{with $.Auto.Ties}}<span class="tie">⚠ {{template "ties" .}} match equally; choose one below</span>{{else}}{{template "badge" $.Auto.Rule}} <code>{{$.Auto.Dir}}</code>{{end}}</dd>
     <dt>Save to</dt><dd>{{template "badge" $.Placement.Rule}} <code>{{$.Placement.Dir}}</code></dd>
   </dl>
   <form method="post" action="/torrents/{{.Hash}}" class="row">

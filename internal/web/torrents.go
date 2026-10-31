@@ -19,6 +19,9 @@ type row struct {
 	torrent.Status
 	Rule   *rules.Rule
 	Manual bool
+	// Ties lists the rules a torrent not pinned by hand matches equally
+	// well, which the user has to choose between.
+	Ties []rules.Rule
 }
 
 // Totals summarize a set of rows for a header.
@@ -72,7 +75,8 @@ type section struct {
 
 // sections splits rows into Downloading, always present, and Completed,
 // present only when it has torrents. Within each, torrents are grouped by
-// rule in priority order, with torrents no rule placed last.
+// rule in name order, after torrents waiting on a choice between tied rules
+// and before torrents no rule placed.
 func sections(rows []row, rs []rules.Rule) []section {
 	var downloading, completed []row
 	for _, r := range rows {
@@ -93,7 +97,12 @@ func sections(rows []row, rs []rules.Rule) []section {
 // total upload speed; downloading ones start open and total download speed.
 func newSection(key, title string, rows []row, rs []rules.Rule, completed bool) section {
 	byRule := make(map[int64][]row)
+	var tied []row
 	for _, r := range rows {
+		if len(r.Ties) > 0 {
+			tied = append(tied, r)
+			continue
+		}
 		var id int64
 		if r.Rule != nil {
 			id = r.Rule.ID
@@ -114,6 +123,8 @@ func newSection(key, title string, rows []row, rs []rules.Rule, completed bool) 
 		}
 		s.Groups = append(s.Groups, g)
 	}
+	// Ties wait on the user, so they come first.
+	addGroup(nil, "ties", tied)
 	for i := range rs {
 		addGroup(&rs[i], "rule-"+strconv.FormatInt(rs[i].ID, 10), byRule[rs[i].ID])
 	}
@@ -148,7 +159,11 @@ func (s *Server) list(ctx context.Context) listData {
 	rows := make([]row, 0, len(statuses))
 	for _, st := range statuses {
 		a := assignments[st.Hash]
-		rows = append(rows, row{Status: st, Rule: byID[a.RuleID], Manual: a.Manual})
+		r := row{Status: st, Rule: byID[a.RuleID], Manual: a.Manual}
+		if best := rules.Match(st.Torrent, rs); !a.Manual && len(best) > 1 {
+			r.Ties = best
+		}
+		rows = append(rows, r)
 	}
 	return listData{Sections: sections(rows, rs), Empty: len(rows) == 0}
 }

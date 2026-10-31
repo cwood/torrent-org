@@ -23,11 +23,11 @@ func TestRules(t *testing.T) {
 	s := open(t, filepath.Join(t.TempDir(), "nested", "test.db"))
 
 	audio := rules.Rule{
-		Name: "🎵 Audio", Color: "#ff8800", Priority: 2, Path: "{root}/{tracker}/audio",
+		Name: "🎵 Audio", Color: "#ff8800", Path: "{root}/{tracker}/audio",
 		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}}},
 	}
 	video := rules.Rule{
-		Name: "Video", Color: "#4f8cff", Priority: 1,
+		Name: "Video", Color: "#4f8cff",
 		Match: rules.Group{
 			Mode:       rules.ModeAll,
 			Conditions: []rules.Condition{{Field: rules.FieldTracker, Op: rules.OpIs, Value: "torrentleech.org"}},
@@ -47,13 +47,12 @@ func TestRules(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []rules.Rule{video, audio}, got)
 
-	audio.Priority = 0
 	audio.Match.Conditions = []rules.Condition{{Field: rules.FieldName, Op: rules.OpContains, Value: "flac"}}
 	_, err = s.SaveRule(ctx, audio)
 	require.NoError(t, err)
 	got, err = s.Rules(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []rules.Rule{audio, video}, got)
+	require.Equal(t, []rules.Rule{video, audio}, got, "rules are listed by name")
 
 	_, err = s.SaveRule(ctx, rules.Rule{ID: 999, Name: "Ghost", Color: "#000", Match: rules.Group{Mode: rules.ModeAll}})
 	require.ErrorIs(t, err, ErrNotFound)
@@ -145,27 +144,6 @@ func TestBaseline(t *testing.T) {
 	require.Equal(t, map[string]Assignment{"abc": {Hash: "abc"}, "def": {Hash: "def"}}, assignments)
 }
 
-func TestReorderRules(t *testing.T) {
-	ctx := t.Context()
-	s := open(t, filepath.Join(t.TempDir(), "test.db"))
-
-	var ids []int64
-	for i, name := range []string{"a", "b", "c"} {
-		id, err := s.SaveRule(ctx, rules.Rule{Name: name, Color: "#000000", Priority: int64(i), Match: rules.Group{Mode: rules.ModeAll}})
-		require.NoError(t, err)
-		ids = append(ids, id)
-	}
-	require.NoError(t, s.ReorderRules(ctx, []int64{ids[2], ids[0], ids[1]}))
-
-	got, err := s.Rules(ctx)
-	require.NoError(t, err)
-	var names []string
-	for _, r := range got {
-		names = append(names, r.Name)
-	}
-	require.Equal(t, []string{"c", "a", "b"}, names)
-}
-
 // TestMigrateNestedConditions upgrades rules written under the flat
 // conditions schema and checks they keep their meaning and order.
 func TestMigrateNestedConditions(t *testing.T) {
@@ -193,14 +171,14 @@ func TestMigrateNestedConditions(t *testing.T) {
 	got, err := s.Rules(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []rules.Rule{
+		{ID: 2, Name: "Manual", Color: "#8e8e93", Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{}}},
 		{
-			ID: 1, Name: "🎬 Video", Color: "#007aff", Priority: 1, Path: "{root}/{tracker}/video",
+			ID: 1, Name: "🎬 Video", Color: "#007aff", Path: "{root}/{tracker}/video",
 			Match: rules.Group{Mode: rules.ModeAny, Conditions: []rules.Condition{
 				{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mkv"},
 				{Field: rules.FieldName, Op: rules.OpContains, Value: "1080p"},
 			}},
 		},
-		{ID: 2, Name: "Manual", Color: "#8e8e93", Priority: 2, Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{}}},
 	}, got)
 
 	assignments, err := s.Assignments(ctx)

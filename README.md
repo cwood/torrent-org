@@ -8,8 +8,9 @@ files go, so downloads land in a layout like `~/torrents/<tracker>/<type>/`.
 It runs as a small local web service alongside Transmission and talks to it
 over RPC:
 
-- **Rules** in priority order, first match wins, each with a name (emoji
-  welcome), colour and destination such as `{root}/{tracker}/audio`.
+- **Rules** with nestable all/any/none conditions, each with a name (emoji
+  welcome), colour and destination such as `{root}/{tracker}/audio`. Rules
+  are independent: the most specific match wins, and ties wait for you.
 - **Add flow**: open a `.torrent` and preview the rule it matches, pick which
   files to download, or write a new rule on the spot.
 - **File association**: double-clicking a `.torrent` opens that preview.

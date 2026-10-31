@@ -16,7 +16,8 @@ import (
 	"github.com/cwood/torrent-org/internal/torrent"
 )
 
-// Reconciler places torrents that have no assignment yet.
+// Reconciler places torrents that have no assignment yet. A torrent whose
+// most specific rules tie is left unassigned for the user to settle.
 //
 // The first pass ever records every existing torrent in place instead of
 // moving it. After that, any unassigned torrent is new, including ones added
@@ -28,9 +29,12 @@ type Reconciler struct {
 	root   string
 	log    *slog.Logger
 	// mu serializes passes with Add so a pass never places a torrent that
-	// Add is about to assign. It also guards seen.
+	// Add is about to assign. It also guards seen and tied.
 	mu   sync.Mutex
 	seen map[string]seen
+	// tied holds unassigned torrents whose best rules tie, so each is
+	// logged once rather than every pass.
+	tied map[string]bool
 	// failure is the previous pass's error text; only Run touches it.
 	failure string
 }
@@ -180,12 +184,30 @@ func (r *Reconciler) placeAll(ctx context.Context, unassigned []torrent.Status) 
 		return err
 	}
 	var errs []error
+	tied := make(map[string]bool)
 	for _, s := range unassigned {
-		if err := r.place(ctx, s, rules.Place(s.Torrent, rs, trackers, r.root), false); err != nil {
+		p := rules.Place(s.Torrent, rs, trackers, r.root)
+		if len(p.Ties) > 0 {
+			if !r.tied[s.Hash] {
+				r.log.Warn("torrent matches several rules equally; choose one in the UI", "name", s.Name, "hash", s.Hash, "rules", ruleNames(p.Ties))
+			}
+			tied[s.Hash] = true
+			continue
+		}
+		if err := r.place(ctx, s, p, false); err != nil {
 			errs = append(errs, fmt.Errorf("place %s (%s): %w", s.Name, s.Hash, err))
 		}
 	}
+	r.tied = tied
 	return errors.Join(errs...)
+}
+
+func ruleNames(rs []rules.Rule) []string {
+	names := make([]string, 0, len(rs))
+	for _, rule := range rs {
+		names = append(names, rule.Name)
+	}
+	return names
 }
 
 // place moves and regroups s where needed to match p and records the
@@ -293,7 +315,8 @@ type Change struct {
 }
 
 // Plan returns the torrents rs would place somewhere other than where they
-// are. Torrents without an assignment are left to the reconciler. Manual
+// are. Torrents without an assignment are left to the reconciler, and
+// torrents whose best rules tie stay put until the user picks one. Manual
 // assignments are included so callers can show them, but their placement
 // was chosen by the user and must not be applied.
 func Plan(statuses []torrent.Status, assignments map[string]store.Assignment, rs []rules.Rule, trackers map[string]string, root string) []Change {
@@ -304,6 +327,9 @@ func Plan(statuses []torrent.Status, assignments map[string]store.Assignment, rs
 			continue
 		}
 		p := rules.Place(s.Torrent, rs, trackers, root)
+		if len(p.Ties) > 0 {
+			continue
+		}
 		if p.Dir != s.Dir || p.Group != s.Group {
 			out = append(out, Change{Status: s, Assignment: a, Placement: p})
 		}

@@ -1,14 +1,14 @@
 -- name: ListRules :many
-SELECT * FROM rules ORDER BY priority, id;
+SELECT * FROM rules ORDER BY name COLLATE NOCASE, id;
 
 -- name: CreateRule :one
-INSERT INTO rules (name, color, priority, path, conditions)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO rules (name, color, path, conditions)
+VALUES (?, ?, ?, ?)
 RETURNING id;
 
 -- name: UpdateRule :execrows
 UPDATE rules
-SET name = ?, color = ?, priority = ?, path = ?, conditions = ?
+SET name = ?, color = ?, path = ?, conditions = ?
 WHERE id = ?;
 
 -- name: DeleteRule :exec
@@ -39,6 +39,3 @@ SELECT EXISTS (SELECT 1 FROM baseline);
 
 -- name: RecordBaseline :exec
 INSERT OR IGNORE INTO baseline (id) VALUES (1);
-
--- name: SetRulePriority :exec
-UPDATE rules SET priority = ? WHERE id = ?;

@@ -39,6 +39,27 @@ var nested = Group{
 	},
 }
 
+func TestSpecificity(t *testing.T) {
+	cond := func(f Field, v string) Condition { return Condition{f, OpIs, v} }
+	tests := []struct {
+		name string
+		g    Group
+		want int
+	}{
+		{name: "all counts every condition", g: Group{Mode: ModeAll, Conditions: []Condition{cond(FieldExtension, "flac"), cond(FieldTracker, "flacsfor.me")}}, want: 2},
+		{name: "any counts the conditions that held", g: Group{Mode: ModeAny, Conditions: []Condition{cond(FieldExtension, "flac"), cond(FieldExtension, "mkv"), cond(FieldExtension, "mp4")}}, want: 1},
+		{name: "none counts what it excluded", g: Group{Mode: ModeNone, Conditions: []Condition{cond(FieldExtension, "mkv"), cond(FieldExtension, "mp4")}}, want: 2},
+		{name: "nested groups add up", g: nested, want: 3},
+		{name: "a failed all", g: Group{Mode: ModeAll, Conditions: []Condition{cond(FieldExtension, "flac"), cond(FieldExtension, "mkv")}}, want: -1},
+		{name: "no conditions never matches", g: Group{Mode: ModeAll}, want: -1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, Rule{Match: tt.g}.Specificity(album))
+		})
+	}
+}
+
 func TestGroupString(t *testing.T) {
 	require.Equal(t, "tracker is flacsfor.me and (extension is flac or extension is wav) and none of (name contains live)", nested.String())
 	require.Equal(t, "name begins with a", Group{Mode: ModeAny, Conditions: []Condition{{FieldName, OpBeginsWith, "a"}}}.String())
@@ -153,16 +174,20 @@ func TestRuleMatches(t *testing.T) {
 
 func TestPlace(t *testing.T) {
 	video := Rule{
-		ID: 1, Name: "Video", Priority: 1, Path: "{root}/{tracker}/video",
+		ID: 1, Name: "Video", Path: "{root}/{tracker}/video",
 		Match: Group{Mode: ModeAny, Conditions: []Condition{{FieldExtension, OpIs, "mkv"}, {FieldExtension, OpIs, "mp4"}}},
 	}
 	audio := Rule{
-		ID: 2, Name: "Audio", Priority: 2, Path: "{root}/{tracker}/audio/",
+		ID: 2, Name: "Audio", Path: "{root}/{tracker}/audio/",
 		Match: Group{Mode: ModeAll, Conditions: []Condition{{FieldExtension, OpIs, "flac"}}},
 	}
 	everything := Rule{
-		ID: 3, Name: "Everything", Priority: 3,
+		ID: 3, Name: "Everything",
 		Match: Group{Mode: ModeAll, Conditions: []Condition{{FieldName, OpContains, ""}}},
+	}
+	tv := Rule{
+		ID: 4, Name: "TV", Path: "{root}/{tracker}/tv",
+		Match: Group{Mode: ModeAll, Conditions: []Condition{{FieldName, OpContains, "s01e"}, {FieldExtension, OpIs, "mkv"}}},
 	}
 	trackers := map[string]string{"flacsfor.me": "red", "backup.example": "backup"}
 
@@ -173,12 +198,21 @@ func TestPlace(t *testing.T) {
 		want  Placement
 	}{
 		{
-			name:  "first matching rule wins",
+			name:  "most specific rule wins regardless of order",
+			t:     show,
+			rules: []Rule{video, everything, tv},
+			want: Placement{
+				Rule: &tv, Tracker: "tracker.example.org",
+				Dir: "/data/torrents/tracker.example.org/tv", Group: "TV",
+			},
+		},
+		{
+			name:  "equally specific rules tie",
 			t:     show,
 			rules: []Rule{video, audio, everything},
 			want: Placement{
-				Rule: &video, Tracker: "tracker.example.org",
-				Dir: "/data/torrents/tracker.example.org/video", Group: "Video",
+				Ties: []Rule{video, everything}, Tracker: "tracker.example.org",
+				Dir: "/data/torrents/tracker.example.org",
 			},
 		},
 		{

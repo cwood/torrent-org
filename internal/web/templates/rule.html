@@ -32,10 +32,10 @@
   <div class="row">
     <button class="primary">Save</button>
     <a href="{{or .Return "/rules"}}" class="button">Cancel</a>
+    {{with .Rule.ID}}<a href="/rules/new?from={{.}}" class="button">Duplicate</a>{{end}}
   </div>
 </form>
-<aside>
-  <h2>On save</h2>
+<aside class="preview">
   <div id="preview" hx-post="/rules/preview" hx-include="#rule-form" hx-trigger="load, input from:#rule-form delay:300ms, change from:#rule-form, htmx:afterSettle from:#rule-form">
     <p class="hint">Loading…</p>
   </div>
@@ -84,32 +84,51 @@
 </div>
 {{end}}
 
+{{/* preview nests like the torrent list: a Matches card holding a card per
+   kind of match, tinted with the rule's colour as currently edited. */}}
 {{define "preview"}}
 {{if .Error}}<p class="alert">Cannot reach the torrent client: {{.Error}}</p>
 {{else}}
-<h3>{{with .Matches.Len}}Matches {{.}} torrent{{if ne . 1}}s{{end}}{{else}}Matches no torrents{{end}}</h3>
-{{if .Manual}}<p class="hint">No conditions: this rule is only assigned by hand.</p>{{end}}
-{{with .Matches}}{{if .Len}}
-<ul class="matches">{{range .Head}}{{template "match" .}}{{end}}</ul>
-{{with .Tail}}<details class="more"><summary>{{len .}} more</summary><ul class="matches">{{range .}}{{template "match" .}}{{end}}</ul></details>{{end}}
-{{end}}{{end}}
-{{with .Taken}}<p class="hint">{{.}} more match{{if eq . 1}}es{{end}}, but an earlier rule or a manual pin takes {{if eq . 1}}it{{else}}them{{end}}.</p>{{end}}
-
-{{with .Changes}}{{if .Len}}
-<h3>{{with $.Moving}}On save, also move {{.}}{{else}}On save{{end}}</h3>
-{{if $.Moving}}<p class="hint">Checked torrents are moved when you save. Active ones are paused while their files move.</p>{{end}}
-<ul class="matches">{{range .Head}}{{template "change" .}}{{end}}</ul>
-{{with .Tail}}<details class="more"><summary>{{len .}} more</summary><ul class="matches">{{range .}}{{template "change" .}}{{end}}</ul></details>{{end}}
-{{end}}{{end}}
+<details class="layer section" open>
+  <summary><span class="layer-title">Matches</span><span class="count">{{.Matches.Len}}</span></summary>
+  {{if .Manual}}<p class="hint">No conditions: this rule is only assigned by hand.</p>{{end}}
+  {{with .Matches}}{{if .Len}}
+  <details class="layer group" open style="--rule: {{$.Color}}">
+    <summary><span class="layer-title">Matched</span><span class="count">{{.Len}}</span></summary>
+    {{template "rows" .}}
+  </details>
+  {{end}}{{end}}
+  {{with .Ties}}{{if .Len}}
+  <details class="layer group" open style="--rule: {{$.Color}}">
+    <summary><span class="badge tie">⚠ Tied with other rules</span><span class="count">{{.Len}}</span></summary>
+    <p class="hint">These match another rule equally well, so they stay put until you choose a rule for each.</p>
+    {{template "rows" .}}
+  </details>
+  {{end}}{{end}}
+  {{if .Moving}}{{with .Changes}}
+  <details class="layer group" open style="--rule: {{$.Color}}">
+    <summary><span class="layer-title">Move on save</span><span class="count">{{$.Moving}}</span></summary>
+    <p class="hint">Checked torrents are moved when you save. Active ones are paused while their files move.</p>
+    {{range .Head}}{{template "change" .}}{{end}}
+    {{with .Tail}}<details class="more"><summary>{{len .}} more</summary>{{range .}}{{template "change" .}}{{end}}</details>{{end}}
+  </details>
+  {{end}}{{end}}
+  {{if not (or .Matches.Len .Ties.Len)}}<p class="empty">No torrents match.</p>{{end}}
+  {{with .Taken}}<p class="hint">{{.}} more match, but a more specific rule or a manual pin takes {{if eq . 1}}it{{else}}them{{end}}.</p>{{end}}
+</details>
 {{end}}
 {{end}}
 
-{{define "match"}}<li><span class="name">{{.Name}}</span>{{if .Manual}} <span class="tag">manual</span>{{end}}</li>{{end}}
+{{/* rows is a folded list of torrent cards. */}}
+{{define "rows"}}
+{{range .Head}}{{template "torrent" .}}{{end}}
+{{with .Tail}}<details class="more"><summary>{{len .}} more</summary>{{range .}}{{template "torrent" .}}{{end}}</details>{{end}}
+{{end}}
 
 {{/* change is a torrent saving would move. Its checkbox stays in the form
    when folded away, so hidden rows still move unless unchecked. */}}
 {{define "change"}}
-<li>
+<div class="torrent">
   {{if .Assignment.Manual}}
   <label class="change muted"><input type="checkbox" disabled> <span class="name">{{.Name}}</span> <span class="tag">manual, not moved</span></label>
   {{else}}
@@ -117,5 +136,5 @@
   {{end}}
   <div class="move"><code>{{.Dir}}</code>{{if ne .Dir .Placement.Dir}} → <code>{{.Placement.Dir}}</code>{{end}}</div>
   {{if ne .Group .Placement.Group}}<div class="move">group: {{or .Group "none"}} → {{or .Placement.Group "none"}}</div>{{end}}
-</li>
+</div>
 {{end}}

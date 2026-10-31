@@ -117,12 +117,29 @@ func (s *Server) rulesPage(w http.ResponseWriter, r *http.Request, code int, err
 	}{chrome{"Rules", "rules"}, rs, errMsg})
 }
 
+// newRule opens the editor for a new rule, or for a copy of the rule named
+// by the from query parameter.
 func (s *Server) newRule(w http.ResponseWriter, r *http.Request) {
-	s.page(w, http.StatusOK, "rule", s.ruleForm(r, rules.Rule{
+	rule := rules.Rule{
 		Color: defaultColor,
 		Path:  "{root}/{tracker}/",
 		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{blankCondition}},
-	}, nil))
+	}
+	if from := r.URL.Query().Get("from"); from != "" {
+		rs, err := s.store.Rules(r.Context())
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		i := slices.IndexFunc(rs, func(o rules.Rule) bool { return strconv.FormatInt(o.ID, 10) == from })
+		if i < 0 {
+			http.NotFound(w, r)
+			return
+		}
+		rule = rs[i]
+		rule.ID, rule.Name = 0, rule.Name+" copy"
+	}
+	s.page(w, http.StatusOK, "rule", s.ruleForm(r, rule, nil))
 }
 
 func (s *Server) editRule(w http.ResponseWriter, r *http.Request) {
@@ -243,9 +260,7 @@ func (s *Server) saveRule(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if r.PathValue("id") == "" {
-		rule.Priority = int64(len(rs) + 1)
-	} else {
+	if r.PathValue("id") != "" {
 		existing, ok, err := s.findRule(r)
 		if err != nil {
 			s.fail(w, err)
@@ -255,7 +270,7 @@ func (s *Server) saveRule(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		rule.ID, rule.Priority = existing.ID, existing.Priority
+		rule.ID = existing.ID
 	}
 
 	err = rule.Validate()
@@ -343,37 +358,37 @@ func changes(statuses []torrent.Status, assignments map[string]store.Assignment,
 	return out
 }
 
-// match is a torrent a rule holds, by its conditions or a manual pin.
-type match struct {
-	Name   string
-	Manual bool
-}
-
-// matches lists the torrents rule holds within rs, sorted by name: those it
-// wins by priority, unless pinned elsewhere, and those pinned to it. taken
-// counts torrents its conditions match that an earlier rule or a pin claims.
-func matches(statuses []torrent.Status, assignments map[string]store.Assignment, rs []rules.Rule, rule rules.Rule) (held []match, taken int) {
+// matches sorts the torrents rule's conditions match within rs. held are
+// those it would hold: pinned to it, or unpinned with it as the single most
+// specific match. tied are unpinned ones where it ties with other rules, so
+// the user has to choose. taken counts those a more specific rule or a pin
+// elsewhere claims.
+func matches(statuses []torrent.Status, assignments map[string]store.Assignment, rs []rules.Rule, rule rules.Rule) (held, tied []row, taken int) {
 	for _, st := range statuses {
 		a := assignments[st.Hash]
+		if a.Manual && rule.ID != 0 && a.RuleID == rule.ID {
+			held = append(held, row{Status: st, Rule: &rule, Manual: true})
+			continue
+		}
+		if !rule.Matches(st.Torrent) {
+			continue
+		}
+		best := rules.Match(st.Torrent, rs)
 		switch {
-		case a.Manual && rule.ID != 0 && a.RuleID == rule.ID:
-			held = append(held, match{Name: st.Name, Manual: true})
-		case !a.Manual && firstMatch(st.Torrent, rs) == rule.ID:
-			held = append(held, match{Name: st.Name})
-		case rule.Matches(st.Torrent):
+		case a.Manual:
+			taken++
+		case len(best) == 1 && best[0].ID == rule.ID:
+			held = append(held, row{Status: st, Rule: &rule})
+		case slices.ContainsFunc(best, func(o rules.Rule) bool { return o.ID == rule.ID }):
+			tied = append(tied, row{Status: st, Ties: best})
+		default:
 			taken++
 		}
 	}
-	slices.SortFunc(held, func(a, b match) int { return strings.Compare(a.Name, b.Name) })
-	return held, taken
-}
-
-// firstMatch is the ID of the rule in rs that t lands in, or -1 for none.
-func firstMatch(t torrent.Torrent, rs []rules.Rule) int64 {
-	if r, ok := rules.Match(t, rs); ok {
-		return r.ID
-	}
-	return -1
+	byName := func(a, b row) int { return strings.Compare(a.Name, b.Name) }
+	slices.SortFunc(held, byName)
+	slices.SortFunc(tied, byName)
+	return held, tied, taken
 }
 
 // previewLimit is how many rows each list in the "On save" panel shows
@@ -422,44 +437,9 @@ func (s *Server) deleteRule(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/rules")
 }
 
-// moveRule swaps a rule with its neighbour; the form's dir is "up" or "down".
-func (s *Server) moveRule(w http.ResponseWriter, r *http.Request) {
-	rule, ok, err := s.findRule(r)
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	rs, err := s.store.Rules(r.Context())
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	ids := make([]int64, len(rs))
-	for i, o := range rs {
-		ids[i] = o.ID
-	}
-	i := slices.Index(ids, rule.ID)
-	j := i + 1
-	if r.FormValue("dir") == "up" {
-		j = i - 1
-	}
-	if j >= 0 && j < len(ids) {
-		ids[i], ids[j] = ids[j], ids[i]
-		if err := s.store.ReorderRules(r.Context(), ids); err != nil {
-			s.fail(w, err)
-			return
-		}
-	}
-	redirect(w, r, "/rules")
-}
-
-// previewRule shows the torrents the rule being edited would hold if saved
-// and the ones saving it would move or regroup, taking the other rules'
-// priority into account.
+// previewRule shows the torrents the rule being edited would hold if saved,
+// where it ties with other rules, and the ones saving it would move or
+// regroup.
 func (s *Server) previewRule(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -473,17 +453,17 @@ func (s *Server) previewRule(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	// Evaluate as if saved: replace the stored rule, or append a new one,
-	// which saveRule gives the lowest priority.
+	// Evaluate as if saved: replace the stored rule, or add a new one.
 	if i := slices.IndexFunc(rs, func(o rules.Rule) bool { return o.ID == rule.ID && rule.ID != 0 }); i >= 0 {
-		rule.Priority = rs[i].Priority
 		rs[i] = rule
 	} else {
 		rs = append(rs, rule)
 	}
 
 	data := struct {
-		Matches folded[match]
+		Color   string
+		Matches folded[row]
+		Ties    folded[row]
 		Taken   int
 		Changes folded[intake.Change]
 		// Moving counts the changes that will move; manual ones are listed
@@ -491,15 +471,15 @@ func (s *Server) previewRule(w http.ResponseWriter, r *http.Request) {
 		Moving int
 		Manual bool
 		Error  string
-	}{Manual: !rule.Match.HasConditions()}
+	}{Color: rule.Color, Manual: !rule.Match.HasConditions()}
 	statuses, assignments, err := s.holdings(r)
 	if err != nil {
 		data.Error = err.Error()
 		s.render(w, http.StatusOK, "rule", "preview", data)
 		return
 	}
-	held, taken := matches(statuses, assignments, rs, rule)
-	data.Matches, data.Taken = fold(held), taken
+	held, tied, taken := matches(statuses, assignments, rs, rule)
+	data.Matches, data.Ties, data.Taken = fold(held), fold(tied), taken
 	cs := changes(statuses, assignments, rs, trackers, s.root, rule.ID)
 	data.Changes = fold(cs)
 	for _, c := range cs {

@@ -1,0 +1,29 @@
+{{/* totals is a header's count, speed, ETA and error count; torrent is a
+   torrent's card. Both are shared by the torrent list and the rule editor. */}}
+{{define "totals"}}
+<span class="count">{{.Count}}</span>
+{{with rate .Rate}}<span class="speed">{{if $.Up}}↑{{else}}↓{{end}} {{.}}</span>{{end}}
+{{with .ETA}}<span class="eta" title="When the slowest torrent should finish">done in ~{{remaining .}}</span>{{end}}
+{{with .Errors}}<span class="errors">⚠ {{.}} error{{if ne . 1}}s{{end}}</span>{{end}}
+{{end}}
+
+{{define "torrent"}}
+<div class="torrent{{if .Error}} errored{{end}}">
+  <a class="name" href="/torrents/{{.Hash}}" title="{{.DataPath}}">{{.Name}}</a>
+  <div class="meta">
+    {{if .Manual}}<span class="tag">manual</span>{{end}}
+    <span class="state state-{{.State}}">{{.State}}</span>
+    {{if not .Complete}}<span>{{percent .Progress}}%</span>{{end}}
+    {{with rate .RateDown}}<span class="speed">↓ {{.}}</span>{{end}}
+    {{with rate .RateUp}}<span class="speed">↑ {{.}}</span>{{end}}
+    {{if .ETA}}<span class="eta">~{{remaining .ETA}} left</span>{{else if eq .State "downloading"}}<span class="eta">stalled</span>{{end}}
+    {{template "reveal" .}}
+  </div>
+  <progress class="bar-{{.State}}{{if .Complete}} done{{end}}" max="100" value="{{percent .Progress}}" title="{{percent .Progress}}%"></progress>
+  {{with .Error}}<div class="error">{{.}}</div>{{end}}
+  {{with .Ties}}<div class="tie">⚠ Matches {{template "ties" .}} equally. <a href="/torrents/{{$.Hash}}">Choose a rule</a></div>{{end}}
+</div>
+{{end}}
+
+{{/* ties lists rules a torrent matches equally well. */}}
+{{define "ties"}}{{range $i, $r := .}}{{if $i}}, {{end}}{{template "badge" $r}}{{end}}{{end}}

@@ -82,7 +82,7 @@ func (h *harness) post(path string, form url.Values) *httptest.ResponseRecorder 
 func (h *harness) audioRule() rules.Rule {
 	h.t.Helper()
 	r := rules.Rule{
-		Name: "🎵 Audio", Color: "#ff8800", Priority: 1, Path: "{root}/{tracker}/audio",
+		Name: "🎵 Audio", Color: "#ff8800", Path: "{root}/{tracker}/audio",
 		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}}},
 	}
 	var err error
@@ -154,7 +154,7 @@ func TestSections(t *testing.T) {
 		{Key: "rule-2", Torrents: []string{"movie"}, Totals: Totals{Count: 1, Rate: 50, ETA: time.Hour}},
 		{Key: "rule-1", Torrents: []string{"a-album", "b-album"}, Totals: Totals{Count: 2, Rate: 100, ETA: 2 * time.Minute}},
 		{Key: "none", Torrents: []string{"loose"}, Totals: Totals{Count: 1, Errors: 1}},
-	}, groups(down), "rules in priority order, paused torrents stay, no rule last")
+	}, groups(down), "rules in the order given, paused torrents stay, no rule last")
 
 	require.Equal(t, "completed", done.Key)
 	require.False(t, done.Open)
@@ -259,6 +259,26 @@ func TestTorrentsPage(t *testing.T) {
 	}
 }
 
+func TestTorrentsPageTies(t *testing.T) {
+	h := newHarness(t)
+	audio := h.audioRule()
+	_, err := h.store.SaveRule(t.Context(), rules.Rule{
+		Name: "🎧 Lossless", Color: "#007aff",
+		Match: rules.Group{Mode: rules.ModeAll, Conditions: []rules.Condition{{Field: rules.FieldExtension, Op: rules.OpIs, Value: "flac"}}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, h.store.Assign(t.Context(), store.Assignment{Hash: "aaa", RuleID: audio.ID}))
+	h.client.EXPECT().Torrents(mock.Anything).Return([]torrent.Status{album("aaa", root+"/red/audio")}, nil).Twice()
+
+	require.Contains(t, h.get("/torrents/aaa").Body.String(), "match equally; choose one below")
+	body := h.get("/").Body.String()
+	require.Contains(t, body, `data-key="ties"`)
+	require.Contains(t, body, "⚠ Choose a rule")
+	require.Contains(t, body, `<div class="tie">⚠ Matches`)
+	require.Contains(t, body, `🎧 Lossless</span>, <span class="badge" style="--rule: #ff8800"><span class="dot"></span>🎵 Audio</span> equally`, "the tie names both rules")
+	require.NotContains(t, body, `data-key="rule-`+itoa(audio.ID)+`"`, "a tie is not shown under the rule it was placed by")
+}
+
 func TestTorrentsPageClientDown(t *testing.T) {
 	h := newHarness(t)
 	h.client.EXPECT().Torrents(mock.Anything).Return(nil, context.DeadlineExceeded).Once()
@@ -326,10 +346,10 @@ func TestCreateRule(t *testing.T) {
 
 	rs := h.rules()
 	require.Len(t, rs, 2)
-	got := rs[1]
+	got := rs[0]
 	got.ID = 0
 	require.Equal(t, rules.Rule{
-		Name: "🎬 Video", Color: "#123456", Priority: 2, Path: "{root}/{tracker}/video",
+		Name: "🎬 Video", Color: "#123456", Path: "{root}/{tracker}/video",
 		Match: rules.Group{Mode: rules.ModeAny, Conditions: []rules.Condition{
 			{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mkv"},
 			{Field: rules.FieldExtension, Op: rules.OpIs, Value: "mp4"},
@@ -376,7 +396,6 @@ func TestEditRule(t *testing.T) {
 	rs := h.rules()
 	require.Len(t, rs, 1)
 	require.Equal(t, "🎵 Music", rs[0].Name)
-	require.Equal(t, audio.Priority, rs[0].Priority)
 
 	require.Equal(t, http.StatusNotFound, h.get("/rules/999").Code)
 	require.Equal(t, http.StatusNotFound, h.post("/rules/999", ruleValues("x", nil)).Code)
@@ -449,16 +468,19 @@ func TestAddGroupAndCondition(t *testing.T) {
 	require.Contains(t, h.get("/rules/condition?group=abc").Body.String(), `name="cond_group" value="abc"`)
 }
 
-func TestMoveAndDeleteRule(t *testing.T) {
+func TestDuplicateAndDeleteRule(t *testing.T) {
 	h := newHarness(t)
 	audio := h.audioRule()
 	require.Equal(t, http.StatusSeeOther, h.post("/rules/new", ruleValues("🎬 Video", nil)).Code)
-	video := h.rules()[1]
+	video := h.rules()[0]
 
-	require.Equal(t, http.StatusSeeOther, h.post("/rules/"+itoa(video.ID)+"/move", url.Values{"dir": {"up"}}).Code)
-	require.Equal(t, []int64{video.ID, audio.ID}, ids(h.rules()))
-	require.Equal(t, http.StatusSeeOther, h.post("/rules/"+itoa(video.ID)+"/move", url.Values{"dir": {"up"}}).Code)
-	require.Equal(t, []int64{video.ID, audio.ID}, ids(h.rules()), "moving the first rule up is a no-op")
+	require.Contains(t, h.get("/rules").Body.String(), `href="/rules/new?from=`+itoa(audio.ID)+`">Duplicate</a>`)
+	require.Contains(t, h.get("/rules/"+itoa(audio.ID)).Body.String(), `href="/rules/new?from=`+itoa(audio.ID)+`"`)
+	body := h.get("/rules/new?from=" + itoa(audio.ID)).Body.String()
+	require.Contains(t, body, `value="🎵 Audio copy"`)
+	require.Contains(t, body, `action="/rules/new"`, "the copy saves as a new rule")
+	require.Contains(t, body, `value="flac"`)
+	require.Equal(t, http.StatusNotFound, h.get("/rules/new?from=999").Code)
 
 	require.Equal(t, http.StatusSeeOther, h.post("/rules/"+itoa(video.ID)+"/delete", nil).Code)
 	require.Equal(t, []int64{audio.ID}, ids(h.rules()))
@@ -493,21 +515,28 @@ func (h *harness) library() (rules.Rule, []torrent.Status) {
 	return audio, statuses
 }
 
+// card is the summary of a preview card titled title holding n torrents.
+func card(title string, n int) string {
+	return `<span class="layer-title">` + title + `</span><span class="count">` + strconv.Itoa(n) + `</span>`
+}
+
 func TestPreviewNewRule(t *testing.T) {
 	h := newHarness(t)
 	_, statuses := h.library()
 	h.client.EXPECT().Torrents(mock.Anything).Return(statuses, nil).Once()
 
 	body := h.post("/rules/preview", ruleValues("🎬 Video", url.Values{"value": {"mkv", "flac"}})).Body.String()
+	require.Contains(t, body, card("Matched", 1))
+	require.Contains(t, body, `<a class="name" href="/torrents/mkv"`)
+	require.Contains(t, body, `⚠ Tied with other rules</span><span class="count">1</span>`, "audio and video both match the album by one condition")
+	require.Contains(t, body, `<a class="name" href="/torrents/flac"`)
+	require.Contains(t, body, "1 more match, but a more specific rule or a manual pin takes it.", "the pinned movie")
+	require.Contains(t, body, card("Move on save", 1), "the pinned movie is listed but not moved")
 	require.Contains(t, body, `name="move" value="mkv" form="rule-form" checked`)
+	require.NotContains(t, body, `name="move" value="flac"`, "a tie never moves")
 	require.Contains(t, body, "<code>/dl</code> → <code>/data/torrents/red/video</code>")
 	require.Contains(t, body, "group: none → 🎬 Video")
 	require.Contains(t, body, "Pinned</span> <span class=\"tag\">manual, not moved</span>")
-	require.NotContains(t, body, "Artist - Album", "the higher-priority audio rule keeps the album")
-	require.Contains(t, body, "<h3>Matches 1 torrent</h3>")
-	require.Contains(t, body, `<li><span class="name">Movie</span></li>`)
-	require.Contains(t, body, "2 more match, but an earlier rule or a manual pin takes them.", "the album and the pinned movie")
-	require.Contains(t, body, "<h3>On save, also move 1</h3>", "the pinned movie is listed but not moved")
 }
 
 func TestPreviewFolds(t *testing.T) {
@@ -521,10 +550,10 @@ func TestPreviewFolds(t *testing.T) {
 	h.client.EXPECT().Torrents(mock.Anything).Return(statuses, nil).Once()
 
 	body := h.post("/rules/preview", ruleValues("🎬 Video", nil)).Body.String()
-	require.Contains(t, body, "<h3>Matches 7 torrents</h3>")
-	require.Equal(t, 2, strings.Count(body, `<details class="more"><summary>2 more</summary>`), "both lists fold after 5")
+	require.Contains(t, body, card("Matched", 7))
+	require.Equal(t, 2, strings.Count(body, `<details class="more"><summary>2 more</summary>`), "both cards fold after 5")
 	require.Equal(t, 7, strings.Count(body, `name="move"`), "folded rows keep their checkboxes")
-	head, _, _ := strings.Cut(body, "<details")
+	head, _, _ := strings.Cut(body, `<details class="more">`)
 	require.Contains(t, head, "Movie 4")
 	require.NotContains(t, head, "Movie 5")
 }
@@ -540,11 +569,11 @@ func TestPreviewPinnedMatch(t *testing.T) {
 		"cond_group": {"top"}, "field": {"extension"}, "op": {"is"}, "value": {"flac"},
 	})
 	body := h.post("/rules/preview", form).Body.String()
-	require.Contains(t, body, "<h3>Matches 2 torrents</h3>")
-	require.Contains(t, body, `<li><span class="name">Artist - Album</span></li>`)
-	require.Contains(t, body, `<li><span class="name">Movie</span> <span class="tag">manual</span></li>`)
-	require.Contains(t, body, "<h3>On save</h3>", "a pinned torrent is listed but not counted as moving")
-	require.Contains(t, body, "manual, not moved")
+	require.Contains(t, body, card("Matched", 2))
+	require.Contains(t, body, `<a class="name" href="/torrents/flac"`)
+	require.Contains(t, body, `<a class="name" href="/torrents/mkv"`)
+	require.Contains(t, body, `<span class="tag">manual</span>`)
+	require.NotContains(t, body, "Move on save", "a pinned torrent is never moved")
 }
 
 func TestPreviewEditedRule(t *testing.T) {
@@ -567,9 +596,9 @@ func TestPreviewNoChanges(t *testing.T) {
 
 	body := h.post("/rules/preview", ruleValues("x", url.Values{"field": nil})).Body.String()
 	require.Contains(t, body, "only assigned by hand")
-	require.Contains(t, body, "<h3>Matches no torrents</h3>")
-	require.NotContains(t, body, `<ul class="matches">`)
-	require.NotContains(t, body, "On save")
+	require.Contains(t, body, card("Matches", 0))
+	require.Contains(t, body, "No torrents match.")
+	require.NotContains(t, body, "Move on save")
 }
 
 func TestSaveRuleMovesSelected(t *testing.T) {
@@ -586,7 +615,7 @@ func TestSaveRuleMovesSelected(t *testing.T) {
 	res := h.post("/rules/new", ruleValues("🎬 Video", url.Values{"move": {"mkv", "pinned", "flac"}}))
 	require.Equal(t, http.StatusSeeOther, res.Code)
 
-	video := h.rules()[1]
+	video := h.rules()[0]
 	got, err := h.store.Assignments(t.Context())
 	require.NoError(t, err)
 	require.Equal(t, store.Assignment{Hash: "mkv", RuleID: video.ID}, got["mkv"])

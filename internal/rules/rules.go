@@ -1,7 +1,8 @@
 // Package rules decides where a torrent belongs. It mirrors the auto-assign
-// groups in the macOS Transmission client: an ordered list of rules, each with
-// conditions combined by "all", "any" or "none" and nestable in groups, where
-// the first matching rule wins.
+// groups in the macOS Transmission client: rules with conditions combined by
+// "all", "any" or "none" and nestable in groups. Unlike the macOS client,
+// rules are independent of each other rather than ordered: when several
+// match, the most specific wins, and ties are left for the user to settle.
 package rules
 
 import (
@@ -83,23 +84,52 @@ func (g Group) HasConditions() bool {
 	return len(g.Conditions) > 0 || slices.ContainsFunc(g.Groups, Group.HasConditions)
 }
 
-func (g Group) matches(t torrent.Torrent) bool {
-	results := make([]bool, 0, len(g.Conditions)+len(g.Groups))
+// score is how specifically t matches g: the number of conditions that held
+// on the way to the match, or -1 when g doesn't match. Conditions and groups
+// a "none" group excludes count once each, since they narrowed the match
+// too.
+func (g Group) score(t torrent.Torrent) int {
+	results := make([]int, 0, len(g.Conditions)+len(g.Groups))
 	for _, c := range g.Conditions {
-		results = append(results, c.matches(t))
+		if c.matches(t) {
+			results = append(results, 1)
+		} else {
+			results = append(results, -1)
+		}
 	}
 	for _, sub := range g.Groups {
-		results = append(results, sub.matches(t))
+		results = append(results, sub.score(t))
 	}
+
+	n := 0
 	switch g.Mode {
 	case ModeAll:
-		return !slices.Contains(results, false)
+		for _, s := range results {
+			if s < 0 {
+				return -1
+			}
+			n += s
+		}
+		return n
 	case ModeAny:
-		return slices.Contains(results, true)
+		matched := false
+		for _, s := range results {
+			if s >= 0 {
+				matched = true
+				n += s
+			}
+		}
+		if !matched {
+			return -1
+		}
+		return n
 	case ModeNone:
-		return !slices.Contains(results, true)
+		if slices.ContainsFunc(results, func(s int) bool { return s >= 0 }) {
+			return -1
+		}
+		return len(results)
 	}
-	return false
+	return -1
 }
 
 // String renders g as one line, such as
@@ -132,18 +162,20 @@ func (g Group) String() string {
 // torrents in the default location, like a macOS group without a custom
 // download location.
 type Rule struct {
-	ID       int64
-	Name     string
-	Color    string
-	Priority int64
-	Path     string
-	Match    Group
+	ID    int64
+	Name  string
+	Color string
+	Path  string
+	Match Group
 }
 
 // Placement is where a torrent should live and which group it belongs to.
-// Rule is nil and Group empty when no rule matched.
+// Rule is nil and Group empty when no single rule won; Ties then lists the
+// rules that matched equally well, if any, and the placement is the default
+// location.
 type Placement struct {
 	Rule    *Rule
+	Ties    []Rule
 	Tracker string
 	Dir     string
 	Group   string
@@ -152,7 +184,16 @@ type Placement struct {
 // Matches reports whether t satisfies r's conditions. A rule without
 // conditions never matches, so it can only be assigned manually.
 func (r Rule) Matches(t torrent.Torrent) bool {
-	return r.Match.HasConditions() && r.Match.matches(t)
+	return r.Specificity(t) >= 0
+}
+
+// Specificity is how many of r's conditions held for t on the way to a
+// match, or -1 when r doesn't match t.
+func (r Rule) Specificity(t torrent.Torrent) int {
+	if !r.Match.HasConditions() {
+		return -1
+	}
+	return r.Match.score(t)
 }
 
 func (c Condition) matches(t torrent.Torrent) bool {
@@ -186,25 +227,35 @@ func (c Condition) compare(s string) bool {
 	return false
 }
 
-// Match returns the first rule in rs that t satisfies. rs must already be in
-// priority order.
-func Match(t torrent.Torrent, rs []Rule) (Rule, bool) {
-	i := slices.IndexFunc(rs, func(r Rule) bool { return r.Matches(t) })
-	if i < 0 {
-		return Rule{}, false
+// Match returns the rules in rs that t matches most specifically: none when
+// nothing matches, one when a rule wins, and several when they tie.
+func Match(t torrent.Torrent, rs []Rule) []Rule {
+	var best []Rule
+	top := -1
+	for _, r := range rs {
+		switch s := r.Specificity(t); {
+		case s > top:
+			best, top = []Rule{r}, s
+		case s == top && s >= 0:
+			best = append(best, r)
+		}
 	}
-	return rs[i], true
+	return best
 }
 
 // Place resolves where t should be stored under root. trackers maps announce
 // hosts to directory names; the first of t's hosts with a mapping wins,
 // otherwise the first host is used as-is.
 func Place(t torrent.Torrent, rs []Rule, trackers map[string]string, root string) Placement {
-	r, ok := Match(t, rs)
-	if !ok {
-		return PlaceIn(t, nil, trackers, root)
+	best := Match(t, rs)
+	if len(best) == 1 {
+		return PlaceIn(t, &best[0], trackers, root)
 	}
-	return PlaceIn(t, &r, trackers, root)
+	p := PlaceIn(t, nil, trackers, root)
+	if len(best) > 1 {
+		p.Ties = best
+	}
+	return p
 }
 
 // PlaceIn resolves where t should be stored if assigned to r regardless of

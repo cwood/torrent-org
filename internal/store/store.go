@@ -90,7 +90,7 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// Rules returns all rules with their conditions in priority order.
+// Rules returns all rules with their conditions, ordered by name.
 func (s *Store) Rules(ctx context.Context) ([]rules.Rule, error) {
 	rows, err := s.q.ListRules(ctx)
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *Store) Rules(ctx context.Context) ([]rules.Rule, error) {
 	}
 	out := make([]rules.Rule, 0, len(rows))
 	for _, r := range rows {
-		rule := rules.Rule{ID: r.ID, Name: r.Name, Color: r.Color, Priority: r.Priority, Path: r.Path}
+		rule := rules.Rule{ID: r.ID, Name: r.Name, Color: r.Color, Path: r.Path}
 		if err := json.Unmarshal([]byte(r.Conditions), &rule.Match); err != nil {
 			return nil, fmt.Errorf("rule %d conditions: %w", r.ID, err)
 		}
@@ -116,7 +116,7 @@ func (s *Store) SaveRule(ctx context.Context, r rules.Rule) (int64, error) {
 	}
 	if r.ID == 0 {
 		id, err := s.q.CreateRule(ctx, db.CreateRuleParams{
-			Name: r.Name, Color: r.Color, Priority: r.Priority, Path: r.Path, Conditions: string(conds),
+			Name: r.Name, Color: r.Color, Path: r.Path, Conditions: string(conds),
 		})
 		if err != nil {
 			return 0, fmt.Errorf("create rule: %w", err)
@@ -124,7 +124,7 @@ func (s *Store) SaveRule(ctx context.Context, r rules.Rule) (int64, error) {
 		return id, nil
 	}
 	n, err := s.q.UpdateRule(ctx, db.UpdateRuleParams{
-		Name: r.Name, Color: r.Color, Priority: r.Priority, Path: r.Path, Conditions: string(conds), ID: r.ID,
+		Name: r.Name, Color: r.Color, Path: r.Path, Conditions: string(conds), ID: r.ID,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("update rule: %w", err)
@@ -215,24 +215,6 @@ func (s *Store) RecordBaseline(ctx context.Context, hashes []string) error {
 	}
 	if err := q.RecordBaseline(ctx); err != nil {
 		return fmt.Errorf("record baseline: %w", err)
-	}
-	return tx.Commit()
-}
-
-// ReorderRules sets rule priorities to match the order of ids.
-func (s *Store) ReorderRules(ctx context.Context, ids []int64) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	// Rollback after a successful Commit returns sql.ErrTxDone and is harmless.
-	defer func() { _ = tx.Rollback() }()
-	q := s.q.WithTx(tx)
-
-	for i, id := range ids {
-		if err := q.SetRulePriority(ctx, db.SetRulePriorityParams{Priority: int64(i + 1), ID: id}); err != nil {
-			return fmt.Errorf("set priority of rule %d: %w", id, err)
-		}
 	}
 	return tx.Commit()
 }

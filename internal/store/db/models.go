@@ -24,7 +24,6 @@ type Rule struct {
 	ID         int64
 	Name       string
 	Color      string
-	Priority   int64
 	Path       string
 	Conditions string
 }

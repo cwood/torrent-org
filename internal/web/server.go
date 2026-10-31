@@ -147,7 +147,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /rules/{id}", s.editRule)
 	mux.HandleFunc("POST /rules/{id}", s.saveRule)
 	mux.HandleFunc("POST /rules/{id}/delete", s.deleteRule)
-	mux.HandleFunc("POST /rules/{id}/move", s.moveRule)
 
 	mux.HandleFunc("GET /trackers", s.trackers)
 	mux.HandleFunc("POST /trackers", s.setTracker)
