@@ -17,7 +17,11 @@
     <button class="primary" {{if $.Unchanged}}disabled{{end}}>Save</button>
   </form>
   <p class="hint">Choosing anything but Automatic pins this torrent so rule changes never move it. Active torrents are paused while their files move and resume afterwards.</p>
-  {{template "files" .Files}}
+  <form method="post" action="/torrents/{{.Hash}}/files" class="stack">
+    {{template "filepicker" $.Files}}
+    <p class="hint">Checked files are downloaded. Unchecking a file stops fetching it; anything already downloaded stays on disk.</p>
+    <div class="row"><button>Update files</button></div>
+  </form>
   {{end}}
 </section>
 {{end}}

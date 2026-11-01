@@ -21,6 +21,8 @@ type torrentPage struct {
 	// Placement is where the selected choice would place it.
 	Placement rules.Placement
 	Picker    picker
+	// Files are the torrent's files, checked when selected for download.
+	Files fileChoices
 	// Unchanged is true when saving would neither move, regroup nor change
 	// whether the assignment is manual.
 	Unchanged bool
@@ -66,6 +68,47 @@ func (s *Server) relocate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	redirect(w, r, "/")
+}
+
+// chooseFiles changes which of the torrent's files are downloaded. Files
+// unchecked after downloading keep their data; Transmission only stops
+// fetching them.
+func (s *Server) chooseFiles(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	hash := r.PathValue("hash")
+	st, ok, err := s.status(r, hash)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	selected := selectedFiles(r)
+	var wanted, unwanted []int
+	for _, f := range st.Files {
+		switch {
+		case selected[f.Index] && !f.Wanted:
+			wanted = append(wanted, f.Index)
+		case !selected[f.Index] && f.Wanted:
+			unwanted = append(unwanted, f.Index)
+		}
+	}
+	if !slices.ContainsFunc(st.Files, func(f torrent.File) bool { return selected[f.Index] }) {
+		s.showTorrent(w, r, http.StatusUnprocessableEntity, "", "Select at least one file to download.")
+		return
+	}
+	if len(wanted)+len(unwanted) > 0 {
+		if err := s.client.SetWanted(r.Context(), hash, wanted, unwanted); err != nil {
+			s.showTorrent(w, r, http.StatusBadGateway, "", "Cannot change files: "+err.Error())
+			return
+		}
+	}
+	redirect(w, r, "/torrents/"+hash)
 }
 
 // revealTorrent shows the torrent's files in the desktop file manager. The
@@ -149,6 +192,9 @@ func (s *Server) showTorrent(w http.ResponseWriter, r *http.Request, code int, c
 	}
 	if i := slices.IndexFunc(rs, func(r rules.Rule) bool { return r.ID == a.RuleID }); i >= 0 {
 		page.Rule = &rs[i]
+	}
+	for _, f := range st.Files {
+		page.Files = append(page.Files, fileChoice{File: f, Checked: f.Wanted})
 	}
 	s.page(w, code, "torrent", page)
 }

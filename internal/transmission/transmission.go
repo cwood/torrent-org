@@ -22,7 +22,7 @@ import (
 const minRPCVersion = 16
 
 var fields = []string{
-	"hashString", "name", "downloadDir", "labels", "files", "trackers",
+	"hashString", "name", "downloadDir", "labels", "files", "wanted", "trackers",
 	"percentDone", "rateDownload", "rateUpload", "eta", "status", "errorString",
 }
 
@@ -127,7 +127,10 @@ func fromRPC(r transmissionrpc.Torrent) torrent.Status {
 	// Transmission file names already include the torrent's top-level
 	// directory, matching torrent.Parse.
 	for i, f := range r.Files {
-		s.Files = append(s.Files, torrent.File{Path: f.Name, Size: f.Length, Index: i})
+		s.Files = append(s.Files, torrent.File{
+			Path: f.Name, Size: f.Length, Index: i,
+			Wanted: i < len(r.Wanted) && r.Wanted[i], Done: f.BytesCompleted,
+		})
 	}
 	return s
 }
@@ -174,8 +177,8 @@ func (c *Client) Add(ctx context.Context, a torrent.Addition) (string, error) {
 		DownloadDir: &a.Dir,
 		Labels:      labels(a.Group),
 	}
-	for _, i := range a.Skip {
-		payload.FilesUnwanted = append(payload.FilesUnwanted, int64(i))
+	if len(a.Skip) > 0 {
+		payload.FilesUnwanted = indexes(a.Skip)
 	}
 	res, err := c.rpc.TorrentAdd(ctx, payload)
 	if err != nil {
@@ -221,6 +224,25 @@ func (c *Client) SetGroup(ctx context.Context, hash, group string) error {
 		return err
 	}
 	return c.rpc.TorrentSet(ctx, transmissionrpc.TorrentSetPayload{IDs: []int64{*t.ID}, Labels: labels(group)})
+}
+
+// SetWanted changes which of the torrent's files are downloaded.
+func (c *Client) SetWanted(ctx context.Context, hash string, wanted, unwanted []int) error {
+	t, err := c.lookup(ctx, hash, "id")
+	if err != nil {
+		return err
+	}
+	return c.rpc.TorrentSet(ctx, transmissionrpc.TorrentSetPayload{
+		IDs: []int64{*t.ID}, FilesWanted: indexes(wanted), FilesUnwanted: indexes(unwanted),
+	})
+}
+
+func indexes(is []int) []int64 {
+	out := make([]int64, 0, len(is))
+	for _, i := range is {
+		out = append(out, int64(i))
+	}
+	return out
 }
 
 // lookup fetches fields, which must include "id", for the torrent with hash.

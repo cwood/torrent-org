@@ -146,6 +146,7 @@ func TestTorrents(t *testing.T) {
 			{"name": "Album/01.flac", "length": 300, "bytesCompleted": 150},
 			{"name": "Album/cover.jpg", "length": 2, "bytesCompleted": 2}
 		],
+		"wanted": [1, 0],
 		"trackers": [{"announce": "https://flacsfor.me/abc/announce", "id": 0, "tier": 0}],
 		"percentDone": 0.5,
 		"rateDownload": 1024,
@@ -172,8 +173,8 @@ func TestTorrents(t *testing.T) {
 				Name:     "Album",
 				Trackers: []string{"https://flacsfor.me/abc/announce"},
 				Files: []torrent.File{
-					{Path: "Album/01.flac", Size: 300, Index: 0},
-					{Path: "Album/cover.jpg", Size: 2, Index: 1},
+					{Path: "Album/01.flac", Size: 300, Index: 0, Wanted: true, Done: 150},
+					{Path: "Album/cover.jpg", Size: 2, Index: 1, Done: 2},
 				},
 			},
 			Dir:      "/data/torrents/red/audio",
@@ -341,10 +342,19 @@ func TestSetGroup(t *testing.T) {
 	}
 }
 
+func TestSetWanted(t *testing.T) {
+	c, f := dial(t, map[string]string{"torrent-get": found})
+	require.NoError(t, c.SetWanted(t.Context(), "abc123", []int{2, 3}, []int{0}))
+	require.Equal(t, map[string]any{
+		"ids": []any{float64(7)}, "files-wanted": []any{float64(2), float64(3)}, "files-unwanted": []any{float64(0)},
+	}, f.last("torrent-set"))
+}
+
 func TestMutateUnknownHash(t *testing.T) {
 	c, _ := dial(t, map[string]string{"torrent-get": `{"torrents":[]}`})
 	require.ErrorIs(t, c.Move(t.Context(), "nope", "/x"), torrent.ErrNotFound)
 	require.ErrorIs(t, c.SetGroup(t.Context(), "nope", "x"), torrent.ErrNotFound)
+	require.ErrorIs(t, c.SetWanted(t.Context(), "nope", []int{0}, nil), torrent.ErrNotFound)
 }
 
 // TestLive runs read-only calls against a real daemon when

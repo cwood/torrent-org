@@ -114,3 +114,8 @@ func TestDataPath(t *testing.T) {
 	require.Equal(t, "/data/torrents/red/movie.mkv", status("movie.mkv", "movie.mkv").DataPath())
 	require.Equal(t, "/data/torrents/red/Magnet", status("Magnet").DataPath(), "no metadata yet")
 }
+
+func TestFileProgress(t *testing.T) {
+	require.InDelta(t, 0.25, File{Size: 200, Done: 50}.Progress(), 1e-9)
+	require.InDelta(t, 1.0, File{}.Progress(), 1e-9, "an empty file is complete")
+}

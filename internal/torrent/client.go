@@ -27,6 +27,9 @@ type Client interface {
 	Move(ctx context.Context, hash, dir string) error
 	// SetGroup assigns a torrent to group. An empty group clears it.
 	SetGroup(ctx context.Context, hash, group string) error
+	// SetWanted selects the files with [File.Index] in wanted for download
+	// and deselects those in unwanted, leaving the rest as they are.
+	SetWanted(ctx context.Context, hash string, wanted, unwanted []int) error
 }
 
 // Addition is a torrent to add to a client.

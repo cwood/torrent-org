@@ -3,13 +3,14 @@
 {{define "filepicker"}}
 <fieldset class="files picker">
   <legend>
-    <label class="change"><input type="checkbox" checked hx-on:change="this.closest('fieldset').querySelectorAll('input[name=file]').forEach(c => c.checked = this.checked)"> Files to download</label>
+    <label class="change"><input type="checkbox" {{if eq .Count (len .)}}checked{{end}} hx-on:change="this.closest('fieldset').querySelectorAll('input[name=file]').forEach(c => c.checked = this.checked)"> Files to download</label>
+    <span class="count">{{.Count}} of {{len .}} · {{bytes .Size}}</span>
   </legend>
   <ul>
     {{range .}}
     <li>
       <label class="change grow"><input type="checkbox" name="file" value="{{.Index}}" {{if .Checked}}checked{{end}}> <span>{{.Path}}</span></label>
-      <span class="count">{{bytes .Size}}</span>
+      <span class="count">{{bytes .Size}}{{if .Wanted}} · {{percent .Progress}}%{{end}}</span>
     </li>
     {{end}}
   </ul>

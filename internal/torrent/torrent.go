@@ -25,6 +25,18 @@ type File struct {
 	Path  string
 	Size  int64
 	Index int
+	// Wanted and Done are known only for torrents a client holds: whether
+	// the file is selected for download and how many of its bytes are.
+	Wanted bool
+	Done   int64
+}
+
+// Progress is the fraction of f downloaded, from 0 to 1.
+func (f File) Progress() float64 {
+	if f.Size == 0 {
+		return 1
+	}
+	return float64(f.Done) / float64(f.Size)
 }
 
 // Torrent is the metadata needed to classify and place a torrent.

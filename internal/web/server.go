@@ -137,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /torrents/{hash}/choose", s.chooseTorrent)
 	mux.HandleFunc("POST /torrents/{hash}", s.relocate)
 	mux.HandleFunc("POST /torrents/{hash}/reveal", s.revealTorrent)
+	mux.HandleFunc("POST /torrents/{hash}/files", s.chooseFiles)
 
 	mux.HandleFunc("GET /rules", s.rules)
 	mux.HandleFunc("GET /rules/new", s.newRule)

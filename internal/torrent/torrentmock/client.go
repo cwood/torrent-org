@@ -239,6 +239,75 @@ func (_c *Client_SetGroup_Call) RunAndReturn(run func(ctx context.Context, hash 
 	return _c
 }
 
+// SetWanted provides a mock function for the type Client
+func (_mock *Client) SetWanted(ctx context.Context, hash string, wanted []int, unwanted []int) error {
+	ret := _mock.Called(ctx, hash, wanted, unwanted)
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetWanted")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []int, []int) error); ok {
+		r0 = returnFunc(ctx, hash, wanted, unwanted)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Client_SetWanted_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetWanted'
+type Client_SetWanted_Call struct {
+	*mock.Call
+}
+
+// SetWanted is a helper method to define mock.On call
+//   - ctx context.Context
+//   - hash string
+//   - wanted []int
+//   - unwanted []int
+func (_e *Client_Expecter) SetWanted(ctx any, hash any, wanted any, unwanted any) *Client_SetWanted_Call {
+	return &Client_SetWanted_Call{Call: _e.mock.On("SetWanted", ctx, hash, wanted, unwanted)}
+}
+
+func (_c *Client_SetWanted_Call) Run(run func(ctx context.Context, hash string, wanted []int, unwanted []int)) *Client_SetWanted_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []int
+		if args[2] != nil {
+			arg2 = args[2].([]int)
+		}
+		var arg3 []int
+		if args[3] != nil {
+			arg3 = args[3].([]int)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Client_SetWanted_Call) Return(err error) *Client_SetWanted_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Client_SetWanted_Call) RunAndReturn(run func(ctx context.Context, hash string, wanted []int, unwanted []int) error) *Client_SetWanted_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Torrents provides a mock function for the type Client
 func (_mock *Client) Torrents(ctx context.Context) ([]torrent.Status, error) {
 	ret := _mock.Called(ctx)

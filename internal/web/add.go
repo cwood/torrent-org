@@ -29,14 +29,38 @@ type addPage struct {
 	Upload    string
 	Placement rules.Placement
 	Picker    picker
-	Files     []fileChoice
+	Files     fileChoices
 	Duplicate bool
 }
 
-// fileChoice is a file in the add form's file selector.
+// fileChoice is a file in a filepicker.
 type fileChoice struct {
 	torrent.File
 	Checked bool
+}
+
+type fileChoices []fileChoice
+
+// Count is how many files are checked.
+func (fs fileChoices) Count() int {
+	n := 0
+	for _, f := range fs {
+		if f.Checked {
+			n++
+		}
+	}
+	return n
+}
+
+// Size is the total size of the checked files.
+func (fs fileChoices) Size() int64 {
+	var n int64
+	for _, f := range fs {
+		if f.Checked {
+			n += f.Size
+		}
+	}
+	return n
 }
 
 func newAddPage() addPage {
@@ -92,14 +116,21 @@ func (s *Server) formState(w http.ResponseWriter, r *http.Request) (addState, bo
 		Metainfo: metainfo,
 		Upload:   r.FormValue("upload"),
 		Choice:   r.FormValue("rule"),
-		Selected: make(map[int]bool),
-	}
-	for _, v := range r.Form["file"] {
-		if i, err := strconv.Atoi(v); err == nil {
-			st.Selected[i] = true
-		}
+		Selected: selectedFiles(r),
 	}
 	return st, true
+}
+
+// selectedFiles is the set of file indexes checked in a filepicker. r's
+// form must already be parsed.
+func selectedFiles(r *http.Request) map[int]bool {
+	selected := make(map[int]bool)
+	for _, v := range r.Form["file"] {
+		if i, err := strconv.Atoi(v); err == nil {
+			selected[i] = true
+		}
+	}
+	return selected
 }
 
 // choose re-renders the preview when the rule picker changes, keeping the

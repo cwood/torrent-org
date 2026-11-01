@@ -665,6 +665,67 @@ func TestTorrentPageSave(t *testing.T) {
 	require.Equal(t, store.Assignment{Hash: "flac", Manual: true}, got["flac"])
 }
 
+// roms is a torrent with three files, the first downloaded, the second
+// half done and the third not selected.
+func roms() torrent.Status {
+	return torrent.Status{
+		Torrent: torrent.Torrent{Hash: "psx", Name: "PlayStation", Files: []torrent.File{
+			{Path: "PlayStation/crash.chd", Size: 100, Index: 0, Wanted: true, Done: 100},
+			{Path: "PlayStation/spyro.chd", Size: 100, Index: 1, Wanted: true, Done: 50},
+			{Path: "PlayStation/tekken.chd", Size: 200, Index: 2},
+		}},
+		Dir: root, State: torrent.StateDownloading,
+	}
+}
+
+func TestTorrentPageFiles(t *testing.T) {
+	h := newHarness(t)
+	h.client.EXPECT().Torrents(mock.Anything).Return([]torrent.Status{roms()}, nil).Once()
+
+	body := h.get("/torrents/psx").Body.String()
+	require.Contains(t, body, `action="/torrents/psx/files"`)
+	require.Contains(t, body, `<span class="count">2 of 3 · 200 B</span>`)
+	require.Contains(t, body, `<input type="checkbox" name="file" value="1" checked> <span>PlayStation/spyro.chd</span></label>
+      <span class="count">100 B · 50%</span>`)
+	require.Contains(t, body, `<input type="checkbox" name="file" value="2" > <span>PlayStation/tekken.chd</span></label>
+      <span class="count">200 B</span>`)
+}
+
+func TestChooseFiles(t *testing.T) {
+	tests := []struct {
+		name     string
+		files    []string
+		wanted   []int
+		unwanted []int
+		code     int
+		body     string
+	}{
+		{name: "add and drop", files: []string{"0", "2"}, wanted: []int{2}, unwanted: []int{1}, code: http.StatusSeeOther},
+		{name: "unchanged", files: []string{"0", "1"}, code: http.StatusSeeOther},
+		{name: "none", code: http.StatusUnprocessableEntity, body: "Select at least one file to download."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			calls := 1
+			if tt.code != http.StatusSeeOther {
+				calls = 2
+			}
+			h.client.EXPECT().Torrents(mock.Anything).Return([]torrent.Status{roms()}, nil).Times(calls)
+			if tt.wanted != nil || tt.unwanted != nil {
+				h.client.EXPECT().SetWanted(mock.Anything, "psx", tt.wanted, tt.unwanted).Return(nil).Once()
+			}
+
+			res := h.post("/torrents/psx/files", url.Values{"file": tt.files})
+			require.Equal(t, tt.code, res.Code)
+			require.Contains(t, res.Body.String(), tt.body)
+			if tt.code == http.StatusSeeOther {
+				require.Equal(t, "/torrents/psx", res.Header().Get("Location"))
+			}
+		})
+	}
+}
+
 func TestTorrentPageUnknown(t *testing.T) {
 	h := newHarness(t)
 	h.client.EXPECT().Torrents(mock.Anything).Return(nil, nil).Once()
