@@ -157,3 +157,60 @@ document.addEventListener("htmx:responseError", (e) => {
   document.addEventListener("DOMContentLoaded", syncAll);
   document.addEventListener("htmx:afterSettle", syncAll);
 })();
+
+// File pickers: the filter hides rows whose path doesn't contain its text,
+// ignoring case like the rules do, and the header box toggles only the
+// visible rows, so a filter can select a subset. Hidden rows stay in the
+// form, so filtering never changes what is submitted.
+(() => {
+  const rows = (fs) => [...fs.querySelectorAll("li[data-path]")];
+  const visible = (fs) => rows(fs).filter((li) => !li.hidden);
+  const boxes = (lis) => lis.map((li) => li.querySelector("input[name=file]"));
+
+  // bytes matches the server's humanize.Bytes: SI units, one decimal
+  // below 10.
+  const bytes = (n) => {
+    const units = ["B", "kB", "MB", "GB", "TB", "PB"];
+    let i = 0;
+    while (n >= 1000 && i < units.length - 1) {
+      n /= 1000;
+      i++;
+    }
+    return `${i && n < 10 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
+  };
+  const sync = (fs) => {
+    const shown = boxes(visible(fs));
+    const header = fs.querySelector("[data-toggle-files]");
+    header.checked = shown.length > 0 && shown.every((c) => c.checked);
+    const picked = rows(fs).filter((li) => li.querySelector("input[name=file]").checked);
+    const size = picked.reduce((sum, li) => sum + Number(li.dataset.size), 0);
+    fs.querySelector("[data-summary]").textContent = `${picked.length} of ${rows(fs).length} · ${bytes(size)}`;
+  };
+  const filter = (input) => {
+    const fs = input.closest("fieldset");
+    const q = input.value.trim().toLowerCase();
+    let n = 0;
+    for (const li of rows(fs)) {
+      li.hidden = q !== "" && !li.dataset.path.toLowerCase().includes(q);
+      if (!li.hidden) n++;
+    }
+    fs.querySelector("[data-shown]").textContent = q ? `${n} shown` : "";
+    sync(fs);
+  };
+
+  document.addEventListener("input", (e) => {
+    if (e.target.matches("[data-filter-files]")) filter(e.target);
+  });
+  // Enter in the filter would otherwise submit the form.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.matches("[data-filter-files]")) e.preventDefault();
+  });
+  document.addEventListener("change", (e) => {
+    const fs = e.target.closest("fieldset.picker");
+    if (!fs) return;
+    if (e.target.matches("[data-toggle-files]")) {
+      boxes(visible(fs)).forEach((c) => (c.checked = e.target.checked));
+    }
+    sync(fs);
+  });
+})();

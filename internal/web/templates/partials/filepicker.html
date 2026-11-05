@@ -1,14 +1,21 @@
-{{/* filepicker renders checkboxes named "file" for the enclosing form; the
-     header box toggles them all. */}}
+{{/* filepicker renders checkboxes named "file" for the enclosing form. The
+     filter hides rows and the header box toggles the visible ones; see
+     app.js. */}}
 {{define "filepicker"}}
 <fieldset class="files picker">
   <legend>
-    <label class="change"><input type="checkbox" {{if eq .Count (len .)}}checked{{end}} hx-on:change="this.closest('fieldset').querySelectorAll('input[name=file]').forEach(c => c.checked = this.checked)"> Files to download</label>
-    <span class="count">{{.Count}} of {{len .}} · {{bytes .Size}}</span>
+    <label class="change"><input type="checkbox" data-toggle-files {{if eq .Count (len .)}}checked{{end}}> Files to download</label>
+    <span class="count" data-summary>{{.Count}} of {{len .}} · {{bytes .Size}}</span>
   </legend>
+  {{if gt (len .) 1}}
+  <div class="row file-filter">
+    <input type="search" class="grow" placeholder="Filter files…" aria-label="Filter files" data-filter-files>
+    <span class="count" data-shown></span>
+  </div>
+  {{end}}
   <ul>
     {{range .}}
-    <li>
+    <li data-path="{{.Path}}" data-size="{{.Size}}">
       <label class="change grow"><input type="checkbox" name="file" value="{{.Index}}" {{if .Checked}}checked{{end}}> <span>{{.Path}}</span></label>
       <span class="count">{{bytes .Size}}{{if .Wanted}} · {{percent .Progress}}%{{end}}</span>
     </li>

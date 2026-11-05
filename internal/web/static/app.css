@@ -206,6 +206,8 @@ aside.preview { background: none; border: 0; padding: 0; }
 .files li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
 .files li span:first-child { overflow-wrap: anywhere; }
 .files.picker ul { margin: 0; }
+.files li[hidden] { display: none; }
+.file-filter { margin: 6px 0; }
 .files.picker label span { overflow-wrap: anywhere; font-weight: normal; }
 
 /* Nested condition groups sit inset in the rule editor. */

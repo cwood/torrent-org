@@ -684,7 +684,10 @@ func TestTorrentPageFiles(t *testing.T) {
 
 	body := h.get("/torrents/psx").Body.String()
 	require.Contains(t, body, `action="/torrents/psx/files"`)
-	require.Contains(t, body, `<span class="count">2 of 3 · 200 B</span>`)
+	require.Contains(t, body, `<span class="count" data-summary>2 of 3 · 200 B</span>`)
+	require.Contains(t, body, `data-filter-files>`)
+	require.Contains(t, body, `<li data-path="PlayStation/crash.chd" data-size="100">`)
+	require.Contains(t, body, `<input type="checkbox" data-toggle-files >`, "not every file is selected")
 	require.Contains(t, body, `<input type="checkbox" name="file" value="1" checked> <span>PlayStation/spyro.chd</span></label>
       <span class="count">100 B · 50%</span>`)
 	require.Contains(t, body, `<input type="checkbox" name="file" value="2" > <span>PlayStation/tekken.chd</span></label>
