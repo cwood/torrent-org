@@ -45,14 +45,15 @@ type Server struct {
 // reveal shows a path in the user's file manager; it only makes sense when
 // the browser runs on the same machine as the service. clientUI is the
 // torrent client's own web interface, linked from the header when non-empty.
-func New(client torrent.Client, st *store.Store, in *intake.Reconciler, root string, interval time.Duration, reveal func(ctx context.Context, path string) error, clientUI string) (*Server, error) {
+// privateShortcut is the key combination that shows or hides private rules.
+func New(client torrent.Client, st *store.Store, in *intake.Reconciler, root string, interval time.Duration, reveal func(ctx context.Context, path string) error, clientUI, privateShortcut string) (*Server, error) {
 	// The link names no rule, but while a passcode exists Transmission's own
 	// interface would show everything being hidden.
 	conceal := func() bool {
 		_, set, err := st.Passcode(context.Background())
 		return set || err != nil
 	}
-	pages, err := parseTemplates(clientUI, conceal)
+	pages, err := parseTemplates(clientUI, conceal, privateShortcut)
 	if err != nil {
 		return nil, err
 	}
@@ -99,11 +100,13 @@ func remaining(d time.Duration) string {
 // partials plus the page's own file, so each page can define "content".
 // parseTemplates parses every page. clientUI is the torrent client's own web
 // interface, linked from the header when non-empty; concealClient reports
-// whether a page should start with that link hidden.
-func parseTemplates(clientUI string, concealClient func() bool) (map[string]*template.Template, error) {
+// whether a page should start with that link hidden. privateShortcut is handed
+// to the browser, which listens for it.
+func parseTemplates(clientUI string, concealClient func() bool, privateShortcut string) (map[string]*template.Template, error) {
 	fm := maps.Clone(funcs)
 	fm["clientUI"] = func() string { return clientUI }
 	fm["concealClient"] = concealClient
+	fm["privateShortcut"] = func() string { return privateShortcut }
 	base, err := template.New("").Funcs(fm).ParseFS(assets, "templates/layout.html", "templates/partials/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse layout: %w", err)

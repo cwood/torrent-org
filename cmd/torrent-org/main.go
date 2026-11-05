@@ -149,7 +149,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
-	ui, err := web.New(client, st, rec, cfg.Root, cfg.PollInterval, desktop.Reveal, webUI)
+	ui, err := web.New(client, st, rec, cfg.Root, cfg.PollInterval, desktop.Reveal, webUI, cfg.PrivateShortcut)
 	if err != nil {
 		return err
 	}

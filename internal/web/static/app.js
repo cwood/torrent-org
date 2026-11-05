@@ -259,7 +259,7 @@ document.addEventListener("htmx:responseError", (e) => {
   }, true);
 })();
 
-// Ctrl+Shift+L shows or hides private rules. The key lives only in this page's
+// The configured shortcut shows or hides private rules. The key lives only in this page's
 // memory, so a reload or new tab starts hidden, and showing or hiding stays as
 // it is until pressed again.
 (() => {
@@ -287,8 +287,21 @@ document.addEventListener("htmx:responseError", (e) => {
     }
   };
 
+  // Codes rather than characters, since modifiers change the character typed:
+  // Shift+1 is "!" and Alt+K can be anything.
+  const pressed = (e) => {
+    const parts = (document.body.dataset.privateShortcut ?? "").split("+");
+    const key = parts.pop();
+    const code = /\d/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`;
+    return e.code === code
+      && e.ctrlKey === parts.includes("ctrl")
+      && e.shiftKey === parts.includes("shift")
+      && e.altKey === parts.includes("alt")
+      && e.metaKey === parts.includes("meta");
+  };
+
   document.addEventListener("keydown", (e) => {
-    if (!e.ctrlKey || !e.shiftKey || e.code !== "KeyL" || e.repeat) return;
+    if (!pressed(e) || e.repeat) return;
     e.preventDefault();
     if (key) {
       hide();

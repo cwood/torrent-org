@@ -54,7 +54,7 @@ func newHarness(t *testing.T) *harness {
 		h.revealed = append(h.revealed, path)
 		return h.revealErr
 	}
-	srv, err := New(client, st, intake.NewReconciler(client, st, root), root, 10*time.Millisecond, reveal, "http://localhost:9091/transmission/web/")
+	srv, err := New(client, st, intake.NewReconciler(client, st, root), root, 10*time.Millisecond, reveal, "http://localhost:9091/transmission/web/", "ctrl+shift+h")
 	require.NoError(t, err)
 	h.h = srv.Handler()
 	return h

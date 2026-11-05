@@ -29,7 +29,10 @@ type Config struct {
 	// defaults to ~/torrents.
 	Root         string        `yaml:"root"`
 	PollInterval time.Duration `yaml:"poll_interval"`
-	Transmission Transmission  `yaml:"transmission"`
+	// PrivateShortcut is the key combination that shows or hides private
+	// rules, such as "ctrl+shift+h".
+	PrivateShortcut string       `yaml:"private_shortcut"`
+	Transmission    Transmission `yaml:"transmission"`
 }
 
 // Transmission holds the RPC connection settings.
@@ -59,11 +62,12 @@ func Load(p string) (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		Listen:       "127.0.0.1:9092",
-		Database:     filepath.Join(dataDir, "torrent-org", "torrent-org.db"),
-		Root:         "~/torrents",
-		PollInterval: 3 * time.Second,
-		Transmission: Transmission{URL: "http://localhost:9091/transmission/rpc"},
+		Listen:          "127.0.0.1:9092",
+		Database:        filepath.Join(dataDir, "torrent-org", "torrent-org.db"),
+		Root:            "~/torrents",
+		PollInterval:    3 * time.Second,
+		PrivateShortcut: "ctrl+shift+h",
+		Transmission:    Transmission{URL: "http://localhost:9091/transmission/rpc"},
 	}
 
 	b, err := os.ReadFile(p)
@@ -74,6 +78,7 @@ func Load(p string) (Config, error) {
 		return Config{}, fmt.Errorf("parse config %s: %w", p, err)
 	}
 
+	cfg.PrivateShortcut = strings.ToLower(cfg.PrivateShortcut)
 	if pw := os.Getenv(PasswordEnv); pw != "" {
 		cfg.Transmission.Password = pw
 	}
@@ -83,6 +88,24 @@ func Load(p string) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// validShortcut reports whether s is distinct modifiers followed by one letter
+// or digit. Shift alone isn't enough, since that would fire while typing.
+func validShortcut(s string) bool {
+	parts := strings.Split(s, "+")
+	key, mods := parts[len(parts)-1], parts[:len(parts)-1]
+	if len(key) != 1 || !strings.Contains("abcdefghijklmnopqrstuvwxyz0123456789", key) {
+		return false
+	}
+	seen := make(map[string]bool)
+	for _, m := range mods {
+		if m != "ctrl" && m != "shift" && m != "alt" && m != "meta" || seen[m] {
+			return false
+		}
+		seen[m] = true
+	}
+	return seen["ctrl"] || seen["alt"] || seen["meta"]
 }
 
 // Validate reports settings the service cannot run with.
@@ -95,6 +118,9 @@ func (c Config) Validate() error {
 	}
 	if c.PollInterval <= 0 {
 		errs = append(errs, fmt.Errorf("poll_interval %s must be positive", c.PollInterval))
+	}
+	if !validShortcut(c.PrivateShortcut) {
+		errs = append(errs, fmt.Errorf("private_shortcut %q must be modifiers and one letter or digit, like ctrl+shift+h, with ctrl, alt or meta among them", c.PrivateShortcut))
 	}
 	if u, err := url.Parse(c.Transmission.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		errs = append(errs, fmt.Errorf("transmission.url %q must be an http(s) URL", c.Transmission.URL))

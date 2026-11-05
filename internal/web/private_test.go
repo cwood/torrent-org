@@ -229,3 +229,8 @@ func TestPrivateTorrent(t *testing.T) {
 		})
 	}
 }
+
+func TestPrivateShortcutReachesBrowser(t *testing.T) {
+	h := newHarness(t)
+	require.Contains(t, h.get("/add").Body.String(), `data-private-shortcut="ctrl&#43;shift&#43;h"`)
+}
