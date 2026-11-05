@@ -64,7 +64,7 @@ func (fs fileChoices) Size() int64 {
 }
 
 func newAddPage() addPage {
-	return addPage{chrome: chrome{"Add torrent", "add"}}
+	return addPage{chrome: chrome{"Add torrent"}}
 }
 
 func (s *Server) addForm(w http.ResponseWriter, r *http.Request) {

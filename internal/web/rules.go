@@ -44,7 +44,7 @@ type ruleForm struct {
 	Match  groupView
 	Errors []string
 	// Return is where to go after saving or cancelling, when the editor was
-	// opened from somewhere other than the rules list.
+	// opened from somewhere other than the dashboard.
 	Return   string
 	Swatches []swatch
 }
@@ -93,28 +93,11 @@ func (s *Server) ruleForm(req *http.Request, r rules.Rule, err error) ruleForm {
 	if r.ID == 0 {
 		title = "New rule"
 	}
-	f := ruleForm{chrome: chrome{title, "rules"}, Rule: r, Match: newGroupView(r.Match, ""), Return: returnTo(req), Swatches: swatches}
+	f := ruleForm{chrome: chrome{title}, Rule: r, Match: newGroupView(r.Match, ""), Return: returnTo(req), Swatches: swatches}
 	if err != nil {
 		f.Errors = strings.Split(err.Error(), "\n")
 	}
 	return f
-}
-
-func (s *Server) rules(w http.ResponseWriter, r *http.Request) {
-	s.rulesPage(w, r, http.StatusOK, "")
-}
-
-func (s *Server) rulesPage(w http.ResponseWriter, r *http.Request, code int, errMsg string) {
-	rs, err := s.store.Rules(r.Context())
-	if err != nil {
-		s.fail(w, err)
-		return
-	}
-	s.page(w, code, "rules", struct {
-		chrome
-		Rules []rules.Rule
-		Error string
-	}{chrome{"Rules", "rules"}, rs, errMsg})
 }
 
 // newRule opens the editor for a new rule, or for a copy of the rule named
@@ -287,10 +270,10 @@ func (s *Server) saveRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.applyRule(r, id, r.PostForm["move"]); err != nil {
-		s.rulesPage(w, r, http.StatusBadGateway, "Rule saved, but some torrents could not be moved: "+err.Error())
+		s.notice(w, http.StatusBadGateway, "Rule saved", "Some torrents could not be moved: "+err.Error())
 		return
 	}
-	redirect(w, r, cmp.Or(returnTo(r), "/rules"))
+	redirect(w, r, cmp.Or(returnTo(r), "/"))
 }
 
 // returnTo is the request's "return" value if it points back at an add
@@ -434,7 +417,7 @@ func (s *Server) deleteRule(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	redirect(w, r, "/rules")
+	redirect(w, r, "/")
 }
 
 // previewRule shows the torrents the rule being edited would hold if saved,

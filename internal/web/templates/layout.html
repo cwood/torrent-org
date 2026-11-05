@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"(409|422|502)","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <meta name="htmx-config" content='{"scrollIntoViewOnBoost":false,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"(409|422|502)","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <meta name="theme-color" content="#4f8cff">
   <title>{{.Title}} · torrent-org</title>
   <link rel="manifest" href="/manifest.webmanifest">
@@ -18,17 +18,17 @@
   <header class="top">
     <a class="brand" href="/">torrent-org</a>
     <nav>
-      <a href="/" {{if eq .Nav "torrents"}}aria-current="page"{{end}}>Torrents</a>
-      <a href="/rules" {{if eq .Nav "rules"}}aria-current="page"{{end}}>Rules</a>
-      <a href="/trackers" {{if eq .Nav "trackers"}}aria-current="page"{{end}}>Trackers</a>
       {{with clientUI}}<a class="icon" href="{{.}}" target="_blank" rel="noopener" hx-boost="false" title="Transmission web interface" aria-label="Transmission web interface"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9M12 3C9.5 5.7 8.2 8.7 8.2 12s1.3 6.3 3.8 9"/></svg></a>{{end}}
-      <a href="/add" class="primary" data-pick-torrent {{if eq .Nav "add"}}aria-current="page"{{end}}>Add torrent</a>
+      <a href="/add" class="primary" data-pick-torrent>Add torrent</a>
     </nav>
   </header>
   <input type="file" id="pick-torrent" accept=".torrent,application/x-bittorrent" hidden>
   <main>
-    {{template "content" .}}
+    <div id="dashboard" class="dashboard">
+      {{block "dashboard" .}}<div hx-get="/dashboard" hx-trigger="load" hx-target="#dashboard"><p class="hint">Loading…</p></div>{{end}}
+    </div>
   </main>
+  <dialog id="modal"><div id="modal-body">{{block "modal" .}}{{end}}</div></dialog>
 </body>
 </html>
 {{end}}

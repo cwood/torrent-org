@@ -1,5 +1,5 @@
-// Remembers which list sections and rule groups are open across live
-// refreshes and reloads; anything never toggled keeps the server's default. A
+// Remembers which panels and rule groups are open across live refreshes and
+// reloads; anything never toggled keeps the server's default. A
 // rule can appear in both sections, so keys are scoped by section. Storage
 // can be unavailable (private windows), so every access is guarded and the
 // list falls back to its defaults.
@@ -24,7 +24,7 @@
   };
   const apply = () => {
     const state = load();
-    document.querySelectorAll("#list details").forEach((d) => {
+    document.querySelectorAll("#list details, #side details").forEach((d) => {
       const open = state[keyOf(d)];
       if (open !== undefined) d.open = open;
     });
@@ -40,6 +40,8 @@
     save(state);
   }, true);
   document.addEventListener("DOMContentLoaded", apply);
+  // afterSwap so a refreshed panel never flashes its default state.
+  document.addEventListener("htmx:afterSwap", apply);
   document.addEventListener("htmx:afterSettle", apply);
   document.addEventListener("htmx:sseMessage", apply);
 
@@ -213,4 +215,46 @@ document.addEventListener("htmx:responseError", (e) => {
     }
     sync(fs);
   });
+})();
+
+// Boosted links and forms replace only the dialog, leaving the dashboard and
+// its live list running behind it. Every page renders its own dialog, so URLs
+// still work directly and a response with an empty one closes it.
+(() => {
+  const sync = () => {
+    const modal = document.getElementById("modal");
+    if (!modal) return;
+    const wanted = document.getElementById("modal-body").children.length > 0;
+    if (!wanted) {
+      if (modal.open) modal.close();
+      return;
+    }
+    if (modal.matches(":modal")) return;
+    // A dialog restored from history has the open attribute but isn't modal.
+    if (modal.open) modal.close();
+    modal.showModal();
+  };
+
+  document.addEventListener("htmx:beforeSwap", (e) => {
+    if (!e.detail.boosted) return;
+    e.detail.target = document.getElementById("modal-body");
+    e.detail.selectOverride = "#modal-body";
+    e.detail.swapOverride = "outerHTML";
+  });
+  document.addEventListener("htmx:afterSettle", (e) => {
+    sync();
+    if (e.detail.boosted && e.detail.requestConfig.verb !== "get") {
+      htmx.trigger(document.body, "panels-changed");
+    }
+  });
+  document.addEventListener("htmx:historyRestore", sync);
+  document.addEventListener("DOMContentLoaded", sync);
+
+  // Closing has to change the URL too, so Escape follows the close link. The
+  // cancel event doesn't bubble.
+  document.addEventListener("cancel", (e) => {
+    if (e.target.id !== "modal") return;
+    e.preventDefault();
+    e.target.querySelector(".modal-close")?.click();
+  }, true);
 })();

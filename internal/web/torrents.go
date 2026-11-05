@@ -140,6 +140,12 @@ type listData struct {
 
 func (s *Server) list(ctx context.Context) listData {
 	statuses, err := s.client.Torrents(ctx)
+	return s.listOf(ctx, statuses, err)
+}
+
+// listOf builds the list from the result of asking the client for its
+// torrents.
+func (s *Server) listOf(ctx context.Context, statuses []torrent.Status, err error) listData {
 	if err != nil {
 		return listData{Error: fmt.Sprintf("Cannot reach the torrent client: %v", err)}
 	}
@@ -168,11 +174,74 @@ func (s *Server) list(ctx context.Context) listData {
 	return listData{Sections: sections(rows, rs), Empty: len(rows) == 0}
 }
 
+// sidePanels is the data for the dashboard's right column.
+type sidePanels struct {
+	Rules   []rules.Rule
+	Aliases []alias
+	// Unaliased are hosts seen on current torrents with no alias yet.
+	Unaliased []string
+}
+
+func (s *Server) sidePanels(ctx context.Context, statuses []torrent.Status) (sidePanels, error) {
+	rs, err := s.store.Rules(ctx)
+	if err != nil {
+		return sidePanels{}, err
+	}
+	aliases, unaliased, err := s.trackerAliases(ctx, statuses)
+	if err != nil {
+		return sidePanels{}, err
+	}
+	return sidePanels{Rules: rs, Aliases: aliases, Unaliased: unaliased}, nil
+}
+
+// dashboard is the data for the whole page behind any dialog.
+type dashboard struct {
+	chrome
+	List listData
+	Side sidePanels
+}
+
+func (s *Server) dashboard(ctx context.Context) (dashboard, error) {
+	// Seen hosts are a convenience; an unreachable client is reported by the
+	// list and shouldn't block editing rules and aliases.
+	statuses, err := s.client.Torrents(ctx)
+	list := s.listOf(ctx, statuses, err)
+	side, err := s.sidePanels(ctx, statuses)
+	if err != nil {
+		return dashboard{}, err
+	}
+	return dashboard{chrome: chrome{"Torrents"}, List: list, Side: side}, nil
+}
+
 func (s *Server) torrents(w http.ResponseWriter, r *http.Request) {
-	s.page(w, http.StatusOK, "torrents", struct {
-		chrome
-		List listData
-	}{chrome{"Torrents", "torrents"}, s.list(r.Context())})
+	d, err := s.dashboard(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.page(w, http.StatusOK, "torrents", d)
+}
+
+// dashboardFragment fills in the dashboard behind a dialog opened directly,
+// so that opening one over a loaded dashboard costs nothing extra.
+func (s *Server) dashboardFragment(w http.ResponseWriter, r *http.Request) {
+	d, err := s.dashboard(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.render(w, http.StatusOK, "torrents", "dashboard", d)
+}
+
+// sideFragment re-renders the right column after a change is saved.
+func (s *Server) sideFragment(w http.ResponseWriter, r *http.Request) {
+	statuses, _ := s.client.Torrents(r.Context())
+	side, err := s.sidePanels(r.Context(), statuses)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.render(w, http.StatusOK, "torrents", "side", side)
 }
 
 // events streams the rendered list as server-sent events whenever it

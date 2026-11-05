@@ -1,7 +1,10 @@
-{{define "content"}}
+{{define "dashboard"}}
 <section hx-ext="sse" sse-connect="/events" sse-swap="list" id="list">
   {{template "list" .List}}
 </section>
+<div id="side" hx-get="/side" hx-trigger="panels-changed from:body">
+  {{template "side" .Side}}
+</div>
 {{end}}
 
 {{define "list"}}

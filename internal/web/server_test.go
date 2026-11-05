@@ -184,7 +184,7 @@ func TestRemaining(t *testing.T) {
 
 func TestClientUILink(t *testing.T) {
 	h := newHarness(t)
-	require.Contains(t, h.get("/rules").Body.String(), `<a class="icon" href="http://localhost:9091/transmission/web/" target="_blank" rel="noopener"`)
+	require.Contains(t, h.get("/add").Body.String(), `<a class="icon" href="http://localhost:9091/transmission/web/" target="_blank" rel="noopener"`)
 }
 
 func TestNewRuleColors(t *testing.T) {
@@ -279,6 +279,50 @@ func TestTorrentsPageTies(t *testing.T) {
 	require.NotContains(t, body, `data-key="rule-`+itoa(audio.ID)+`"`, "a tie is not shown under the rule it was placed by")
 }
 
+func TestDashboard(t *testing.T) {
+	h := newHarness(t)
+	h.audioRule()
+	require.NoError(t, h.store.SetTracker(t.Context(), "flacsfor.me", "red"))
+	h.client.EXPECT().Torrents(mock.Anything).Return([]torrent.Status{album("aaa", "/dl")}, nil).Twice()
+
+	body := h.get("/").Body.String()
+	require.Contains(t, body, `sse-connect="/events"`)
+	require.Contains(t, body, `data-section="rules"`)
+	require.Contains(t, body, `data-section="trackers"`)
+	require.Contains(t, body, `<div id="modal-body"></div>`, "no dialog over the dashboard itself")
+
+	fragment := h.get("/dashboard").Body.String()
+	require.Contains(t, fragment, `sse-connect="/events"`)
+	require.NotContains(t, fragment, "<html", "swapped into a page that already has a layout")
+
+	for _, u := range []string{"/rules", "/trackers"} {
+		res := h.get(u)
+		require.Equal(t, http.StatusSeeOther, res.Code, u)
+		require.Equal(t, "/", res.Header().Get("Location"), u)
+	}
+}
+
+// A dialog opened directly loads the dashboard behind it separately, so
+// opening one over a loaded dashboard never asks the client for torrents.
+func TestDialogPageLoadsDashboardLazily(t *testing.T) {
+	h := newHarness(t)
+	body := h.get("/rules/new").Body.String()
+	require.Contains(t, body, `hx-get="/dashboard" hx-trigger="load"`)
+	require.Contains(t, body, `id="rule-form"`)
+	require.Contains(t, body, `class="button modal-close" href="/"`)
+}
+
+func TestSidePanelsSurviveClientDown(t *testing.T) {
+	h := newHarness(t)
+	audio := h.audioRule()
+	h.client.EXPECT().Torrents(mock.Anything).Return(nil, context.DeadlineExceeded).Twice()
+
+	body := h.get("/").Body.String()
+	require.Contains(t, body, "Cannot reach the torrent client")
+	require.Contains(t, body, audio.Name)
+	require.Contains(t, h.get("/side").Body.String(), audio.Name)
+}
+
 func TestTorrentsPageClientDown(t *testing.T) {
 	h := newHarness(t)
 	h.client.EXPECT().Torrents(mock.Anything).Return(nil, context.DeadlineExceeded).Once()
@@ -342,7 +386,7 @@ func TestCreateRule(t *testing.T) {
 
 	res := h.post("/rules/new", ruleValues("🎬 Video", nil))
 	require.Equal(t, http.StatusSeeOther, res.Code)
-	require.Equal(t, "/rules", res.Header().Get("Location"))
+	require.Equal(t, "/", res.Header().Get("Location"))
 
 	rs := h.rules()
 	require.Len(t, rs, 2)
@@ -443,7 +487,8 @@ func TestNestedRuleEditor(t *testing.T) {
 	video := h.rules()[0]
 	require.Equal(t, "tracker is torrentleech.org and (extension is mkv or extension is mp4)", video.Match.String())
 
-	require.Contains(t, h.get("/rules").Body.String(), "<code>tracker is torrentleech.org and (extension is mkv or extension is mp4)</code>")
+	h.client.EXPECT().Torrents(mock.Anything).Return(nil, nil).Once()
+	require.Contains(t, h.get("/side").Body.String(), "<code>tracker is torrentleech.org and (extension is mkv or extension is mp4)</code>")
 	body := h.get("/rules/" + itoa(video.ID)).Body.String()
 	require.Contains(t, body, `<fieldset class="cond-group nested">`)
 	require.Contains(t, body, `<option value="none" >none</option>`)
@@ -474,7 +519,8 @@ func TestDuplicateAndDeleteRule(t *testing.T) {
 	require.Equal(t, http.StatusSeeOther, h.post("/rules/new", ruleValues("🎬 Video", nil)).Code)
 	video := h.rules()[0]
 
-	require.Contains(t, h.get("/rules").Body.String(), `href="/rules/new?from=`+itoa(audio.ID)+`">Duplicate</a>`)
+	h.client.EXPECT().Torrents(mock.Anything).Return(nil, nil).Once()
+	require.Contains(t, h.get("/side").Body.String(), `href="/rules/new?from=`+itoa(audio.ID)+`" aria-label="Duplicate 🎵 Audio">Duplicate</a>`)
 	require.Contains(t, h.get("/rules/"+itoa(audio.ID)).Body.String(), `href="/rules/new?from=`+itoa(audio.ID)+`"`)
 	body := h.get("/rules/new?from=" + itoa(audio.ID)).Body.String()
 	require.Contains(t, body, `value="🎵 Audio copy"`)
@@ -631,7 +677,7 @@ func TestSaveRuleMoveFails(t *testing.T) {
 
 	res := h.post("/rules/new", ruleValues("🎬 Video", url.Values{"move": {"mkv"}}))
 	require.Equal(t, http.StatusBadGateway, res.Code)
-	require.Contains(t, res.Body.String(), "Rule saved, but some torrents could not be moved")
+	require.Contains(t, res.Body.String(), "Some torrents could not be moved")
 	require.Len(t, h.rules(), 2)
 }
 
@@ -741,9 +787,9 @@ func TestTrackers(t *testing.T) {
 	other.Trackers = []string{"udp://new.example:80", "https://flacsfor.me/x"}
 	h.client.EXPECT().Torrents(mock.Anything).Return([]torrent.Status{other}, nil).Once()
 
-	body := h.get("/trackers").Body.String()
+	body := h.get("/side").Body.String()
 	require.Contains(t, body, `value="red"`)
-	require.Contains(t, body, "<code>new.example</code> <span class=\"tag\">seen</span>")
+	require.Contains(t, body, `<code title="new.example">new.example</code> <span class="tag">seen</span>`)
 
 	require.Equal(t, http.StatusSeeOther, h.post("/trackers", url.Values{"host": {" New.Example "}, "name": {"new"}}).Code)
 	require.Equal(t, http.StatusSeeOther, h.post("/trackers/delete", url.Values{"host": {"flacsfor.me"}}).Code)
@@ -754,7 +800,6 @@ func TestTrackers(t *testing.T) {
 
 func TestTrackersInvalid(t *testing.T) {
 	h := newHarness(t)
-	h.client.EXPECT().Torrents(mock.Anything).Return(nil, nil).Once()
 
 	res := h.post("/trackers", url.Values{"host": {"x.example"}, "name": {"a/b"}})
 	require.Equal(t, http.StatusUnprocessableEntity, res.Code)
@@ -928,7 +973,7 @@ func TestRuleEditorReturn(t *testing.T) {
 
 	for _, bad := range []string{"https://evil.example", "//evil.example", "/add/abc/../../x", "/rules"} {
 		res := h.post("/rules/new", ruleValues("x"+bad, url.Values{"return": {bad}, "name": {"r" + itoa(int64(len(bad)))}}))
-		require.Equal(t, "/rules", res.Header().Get("Location"), bad)
+		require.Equal(t, "/", res.Header().Get("Location"), bad)
 	}
 }
 

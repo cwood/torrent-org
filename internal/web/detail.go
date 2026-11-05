@@ -181,7 +181,7 @@ func (s *Server) showTorrent(w http.ResponseWriter, r *http.Request, code int, c
 	}
 
 	page := torrentPage{
-		chrome:    chrome{st.Name, "torrents"},
+		chrome:    chrome{st.Name},
 		Status:    st,
 		Manual:    a.Manual,
 		Auto:      rules.Place(st.Torrent, rs, trackers, s.root),

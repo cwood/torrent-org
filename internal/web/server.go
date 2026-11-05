@@ -1,5 +1,6 @@
-// Package web serves the htmx UI: the torrent list, the rules and tracker
-// editors and the add flow. Every asset is embedded in the binary.
+// Package web serves the htmx UI: a single dashboard holding the torrent list,
+// rules and tracker aliases, with larger views opening in a dialog over it.
+// Every asset is embedded in the binary.
 package web
 
 import (
@@ -132,6 +133,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /manifest.webmanifest", serveFile(static, "manifest.webmanifest"))
 
 	mux.HandleFunc("GET /{$}", s.torrents)
+	mux.HandleFunc("GET /dashboard", s.dashboardFragment)
+	mux.HandleFunc("GET /side", s.sideFragment)
 	mux.HandleFunc("GET /events", s.events)
 	mux.HandleFunc("GET /torrents/{hash}", s.detail)
 	mux.HandleFunc("POST /torrents/{hash}/choose", s.chooseTorrent)
@@ -139,7 +142,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /torrents/{hash}/reveal", s.revealTorrent)
 	mux.HandleFunc("POST /torrents/{hash}/files", s.chooseFiles)
 
-	mux.HandleFunc("GET /rules", s.rules)
+	mux.Handle("GET /rules", http.RedirectHandler("/", http.StatusSeeOther))
 	mux.HandleFunc("GET /rules/new", s.newRule)
 	mux.HandleFunc("GET /rules/condition", s.condition)
 	mux.HandleFunc("GET /rules/group", s.group)
@@ -149,7 +152,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /rules/{id}", s.saveRule)
 	mux.HandleFunc("POST /rules/{id}/delete", s.deleteRule)
 
-	mux.HandleFunc("GET /trackers", s.trackers)
+	mux.Handle("GET /trackers", http.RedirectHandler("/", http.StatusSeeOther))
 	mux.HandleFunc("POST /trackers", s.setTracker)
 	mux.HandleFunc("POST /trackers/delete", s.deleteTracker)
 
@@ -194,7 +197,14 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 // chrome is the layout data every page carries.
 type chrome struct {
 	Title string
-	Nav   string
+}
+
+// notice shows msg in a dialog over the dashboard.
+func (s *Server) notice(w http.ResponseWriter, status int, title, msg string) {
+	s.page(w, status, "notice", struct {
+		chrome
+		Message string
+	}{chrome{title}, msg})
 }
 
 // redirect sends the browser to url after a successful POST.

@@ -1,4 +1,5 @@
-{{define "content"}}
+{{define "modal"}}
+{{template "modal-close" (or .Return "/")}}
 <h1>{{.Title}}</h1>
 {{if .Errors}}<ul class="alert">{{range .Errors}}<li>{{.}}</li>{{end}}</ul>{{end}}
 <div class="split">
@@ -31,7 +32,7 @@
   {{template "group" .Match}}
   <div class="row">
     <button class="primary">Save</button>
-    <a href="{{or .Return "/rules"}}" class="button">Cancel</a>
+    <a href="{{or .Return "/"}}" class="button">Cancel</a>
     {{with .Rule.ID}}<a href="/rules/new?from={{.}}" class="button">Duplicate</a>{{end}}
   </div>
 </form>

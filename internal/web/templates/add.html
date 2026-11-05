@@ -1,4 +1,5 @@
-{{define "content"}}
+{{define "modal"}}
+{{template "modal-close" "/"}}
 <h1>Add torrent</h1>
 {{if .Error}}<p class="alert">{{.Error}}</p>{{end}}
 {{if not .Torrent}}

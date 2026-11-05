@@ -1,0 +1,67 @@
+{{/* side is the dashboard's right column, refreshed whenever a change is
+     saved. */}}
+{{define "side"}}
+<details class="layer section" data-section="rules" open>
+  <summary><span class="layer-title">Rules</span><span class="count">{{len .Rules}}</span><a class="button primary push" href="/rules/new">New</a></summary>
+  <p class="hint">Rules are independent: the one matching the most conditions wins, and ties wait for you. A rule without conditions is only assigned by hand.</p>
+  {{if not .Rules}}<p class="empty">No rules yet.</p>{{end}}
+  <ul class="rules">
+    {{range .Rules}}
+    <li style="--rule: {{.Color}}">
+      <div class="rule-main">
+        <a class="rule-name" href="/rules/{{.ID}}">{{.Name}}</a>
+        <div class="rule-detail" title="{{if .Match.HasConditions}}{{.Match}}{{else}}Manual only{{end}}">{{if .Match.HasConditions}}<code>{{.Match}}</code>{{else}}Manual only{{end}}</div>
+        <div class="rule-detail" title="{{or .Path "{root}/{tracker}"}}">→ <code>{{or .Path "{root}/{tracker}"}}</code></div>
+      </div>
+      <div class="rule-actions">
+        <a class="button" href="/rules/{{.ID}}" aria-label="Edit {{.Name}}">Edit</a>
+        <a class="button" href="/rules/new?from={{.ID}}" aria-label="Duplicate {{.Name}}">Duplicate</a>
+        <form method="post" action="/rules/{{.ID}}/delete" hx-confirm="Delete rule {{.Name}}? Torrents it placed stay where they are."><button class="danger" aria-label="Delete {{.Name}}">Delete</button></form>
+      </div>
+    </li>
+    {{end}}
+  </ul>
+</details>
+<details class="layer section" data-section="trackers" open>
+  <summary><span class="layer-title">Trackers</span><span class="count">{{len .Aliases}}</span></summary>
+  <p class="hint">Directory names for <code>{tracker}</code>. Hosts without one use the host name.</p>
+  <ul class="aliases">
+    {{range .Aliases}}
+    <li>
+      <code title="{{.Host}}">{{.Host}}</code>
+      <div class="alias-forms">
+        <form method="post" action="/trackers" class="row grow">
+          <input type="hidden" name="host" value="{{.Host}}">
+          <input name="name" value="{{.Name}}" required class="grow" aria-label="Directory name for {{.Host}}">
+          <button>Save</button>
+        </form>
+        <form method="post" action="/trackers/delete" hx-confirm="Remove the alias for {{.Host}}?">
+          <input type="hidden" name="host" value="{{.Host}}">
+          <button class="danger" title="Remove" aria-label="Remove alias for {{.Host}}">✕</button>
+        </form>
+      </div>
+    </li>
+    {{end}}
+    {{range .Unaliased}}
+    <li>
+      <span><code title="{{.}}">{{.}}</code> <span class="tag">seen</span></span>
+      <form method="post" action="/trackers" class="row">
+        <input type="hidden" name="host" value="{{.}}">
+        <input name="name" required class="grow" placeholder="short name" aria-label="Directory name for {{.}}">
+        <button class="primary">Add</button>
+      </form>
+    </li>
+    {{end}}
+    <li>
+      <form method="post" action="/trackers" class="row">
+        <input name="host" required placeholder="tracker.example.org" class="grow" aria-label="Announce host">
+        <input name="name" required placeholder="directory name" class="grow" aria-label="Directory name">
+        <button class="primary">Add alias</button>
+      </form>
+    </li>
+  </ul>
+</details>
+{{end}}
+
+{{/* modal-close links out of the dialog to the given URL. */}}
+{{define "modal-close"}}<a class="button modal-close" href="{{.}}" title="Close" aria-label="Close">✕</a>{{end}}

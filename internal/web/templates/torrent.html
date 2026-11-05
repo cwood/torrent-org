@@ -1,5 +1,5 @@
-{{define "content"}}
-<p><a href="/">← Torrents</a></p>
+{{define "modal"}}
+{{template "modal-close" "/"}}
 <section id="torrent" class="card">
   {{with .Status}}
   <h1 class="name">{{.Name}}</h1>
