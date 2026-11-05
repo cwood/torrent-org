@@ -2,13 +2,13 @@
 SELECT * FROM rules ORDER BY name COLLATE NOCASE, id;
 
 -- name: CreateRule :one
-INSERT INTO rules (name, color, path, conditions)
-VALUES (?, ?, ?, ?)
+INSERT INTO rules (name, color, path, conditions, private)
+VALUES (?, ?, ?, ?, ?)
 RETURNING id;
 
 -- name: UpdateRule :execrows
 UPDATE rules
-SET name = ?, color = ?, path = ?, conditions = ?
+SET name = ?, color = ?, path = ?, conditions = ?, private = ?
 WHERE id = ?;
 
 -- name: DeleteRule :exec
@@ -39,3 +39,13 @@ SELECT EXISTS (SELECT 1 FROM baseline);
 
 -- name: RecordBaseline :exec
 INSERT OR IGNORE INTO baseline (id) VALUES (1);
+
+-- name: GetPasscode :one
+SELECT hash FROM passcode;
+
+-- name: SetPasscode :exec
+INSERT INTO passcode (id, hash) VALUES (1, ?)
+ON CONFLICT (id) DO UPDATE SET hash = excluded.hash;
+
+-- name: ClearPasscode :exec
+DELETE FROM passcode;

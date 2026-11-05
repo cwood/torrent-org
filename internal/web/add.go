@@ -28,9 +28,11 @@ type addPage struct {
 	Metainfo  string
 	Upload    string
 	Placement rules.Placement
-	Picker    picker
-	Files     fileChoices
-	Duplicate bool
+	// ConcealPlacement hides a placement that would reveal a private rule.
+	ConcealPlacement bool
+	Picker           picker
+	Files            fileChoices
+	Duplicate        bool
 }
 
 // fileChoice is a file in a filepicker.
@@ -210,7 +212,8 @@ func (s *Server) showAdd(w http.ResponseWriter, r *http.Request, code int, st ad
 	page.Metainfo = base64.StdEncoding.EncodeToString(st.Metainfo)
 	page.Upload = st.Upload
 	page.Placement = p
-	page.Picker = picker{Rules: rs, Choice: st.Choice, Action: "/add/choose", Target: "add-preview"}
+	page.ConcealPlacement = s.concealsPlacement(r, p)
+	page.Picker = picker{Rules: s.visibleRules(r, rs), Choice: st.Choice, Action: "/add/choose", Target: "add-preview"}
 	for _, f := range t.Files {
 		page.Size += f.Size
 		page.Files = append(page.Files, fileChoice{File: f, Checked: st.Selected == nil || st.Selected[f.Index]})

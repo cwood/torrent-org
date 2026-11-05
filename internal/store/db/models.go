@@ -20,12 +20,18 @@ type Baseline struct {
 	RecordedAt time.Time
 }
 
+type Passcode struct {
+	ID   int64
+	Hash string
+}
+
 type Rule struct {
 	ID         int64
 	Name       string
 	Color      string
 	Path       string
 	Conditions string
+	Private    bool
 }
 
 type Tracker struct {

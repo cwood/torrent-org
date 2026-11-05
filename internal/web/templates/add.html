@@ -16,8 +16,12 @@
     <dt>Size</dt><dd>{{bytes $.Size}} in {{len .Files}} file{{if ne (len .Files) 1}}s{{end}}</dd>
     <dt>Tracker</dt><dd>{{$.Placement.Tracker}}</dd>
     <dt>Info hash</dt><dd><code>{{.Hash}}</code></dd>
+    {{if $.ConcealPlacement}}
+    <dt>Destination</dt><dd>Automatic</dd>
+    {{else}}
     <dt>Destination</dt><dd><code>{{$.Placement.Dir}}</code></dd>
     <dt>Group</dt><dd>{{template "badge" $.Placement.Rule}}</dd>
+    {{end}}
   </dl>
 
   {{if $.Duplicate}}

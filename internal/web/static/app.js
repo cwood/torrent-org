@@ -258,3 +258,57 @@ document.addEventListener("htmx:responseError", (e) => {
     e.target.querySelector(".modal-close")?.click();
   }, true);
 })();
+
+// Ctrl+Shift+L shows or hides private rules. The key lives only in this page's
+// memory, so a reload or new tab starts hidden, and showing or hiding stays as
+// it is until pressed again.
+(() => {
+  let key = null;
+
+  document.addEventListener("htmx:configRequest", (e) => {
+    if (key) e.detail.headers["X-Unlock-Key"] = key;
+  });
+
+  const clientLink = () => document.querySelector(".top nav a.icon");
+  const show = async (unlocked) => {
+    key = unlocked;
+    const link = clientLink();
+    if (link) link.hidden = false;
+    document.getElementById("modal-body").replaceChildren();
+    document.getElementById("modal").close();
+    history.replaceState(null, "", "/");
+    await htmx.ajax("GET", "/dashboard", { target: "#dashboard", swap: "innerHTML" });
+  };
+  const hide = async () => {
+    try {
+      await fetch("/lock", { method: "POST", headers: { "X-Unlock-Key": key } });
+    } finally {
+      window.location.assign("/");
+    }
+  };
+
+  document.addEventListener("keydown", (e) => {
+    if (!e.ctrlKey || !e.shiftKey || e.code !== "KeyL" || e.repeat) return;
+    e.preventDefault();
+    if (key) {
+      hide();
+      return;
+    }
+    htmx.ajax("GET", "/unlock", { target: "#modal-body", select: "#modal-body", swap: "outerHTML" });
+  });
+
+  document.addEventListener("submit", async (e) => {
+    if (e.target.id !== "unlock-form") return;
+    e.preventDefault();
+    const error = document.querySelector("[data-unlock-error]");
+    const res = await fetch("/unlock", { method: "POST", body: new URLSearchParams(new FormData(e.target)) });
+    if (res.ok) {
+      await show((await res.json()).key);
+      return;
+    }
+    error.textContent = (await res.text()).trim();
+    error.hidden = false;
+    e.target.reset();
+    e.target.querySelector("input").focus();
+  });
+})();

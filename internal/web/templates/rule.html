@@ -29,6 +29,9 @@
     <input name="path" value="{{.Rule.Path}}" placeholder="{root}/{tracker}">
     <small>Use <code>{root}</code> and <code>{tracker}</code>. Leave empty for the default location.</small>
   </label>
+  {{if .ShowPrivate}}
+  <label class="change"><input type="checkbox" name="private" {{if .Rule.Private}}checked{{end}}> Private: hide this rule and its torrents until unlocked</label>
+  {{end}}
   {{template "group" .Match}}
   <div class="row">
     <button class="primary">Save</button>

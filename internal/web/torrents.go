@@ -2,9 +2,9 @@ package web
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +22,8 @@ type row struct {
 	// Ties lists the rules a torrent not pinned by hand matches equally
 	// well, which the user has to choose between.
 	Ties []rules.Rule
+	// Private marks a torrent that only an unlocked page shows.
+	Private bool
 }
 
 // Totals summarize a set of rows for a header.
@@ -138,14 +140,15 @@ type listData struct {
 	Error    string
 }
 
-func (s *Server) list(ctx context.Context) listData {
-	statuses, err := s.client.Torrents(ctx)
-	return s.listOf(ctx, statuses, err)
+func (s *Server) list(r *http.Request) listData {
+	statuses, err := s.client.Torrents(r.Context())
+	return s.listOf(r, statuses, err)
 }
 
-// listOf builds the list from the result of asking the client for its
-// torrents.
-func (s *Server) listOf(ctx context.Context, statuses []torrent.Status, err error) listData {
+// listOf builds the list r's page may see from the result of asking the
+// client for its torrents.
+func (s *Server) listOf(req *http.Request, statuses []torrent.Status, err error) listData {
+	ctx := req.Context()
 	if err != nil {
 		return listData{Error: fmt.Sprintf("Cannot reach the torrent client: %v", err)}
 	}
@@ -162,10 +165,15 @@ func (s *Server) listOf(ctx context.Context, statuses []torrent.Status, err erro
 		byID[rs[i].ID] = &rs[i]
 	}
 
+	concealing := s.concealing(req)
 	rows := make([]row, 0, len(statuses))
 	for _, st := range statuses {
 		a := assignments[st.Hash]
-		r := row{Status: st, Rule: byID[a.RuleID], Manual: a.Manual}
+		private := privateTorrent(st.Torrent, a, rs)
+		if private && concealing {
+			continue
+		}
+		r := row{Status: st, Rule: byID[a.RuleID], Manual: a.Manual, Private: private}
 		if best := rules.Match(st.Torrent, rs); !a.Manual && len(best) > 1 {
 			r.Ties = best
 		}
@@ -182,16 +190,39 @@ type sidePanels struct {
 	Unaliased []string
 }
 
-func (s *Server) sidePanels(ctx context.Context, statuses []torrent.Status) (sidePanels, error) {
+func (s *Server) sidePanels(r *http.Request, statuses []torrent.Status) (sidePanels, error) {
+	ctx := r.Context()
 	rs, err := s.store.Rules(ctx)
 	if err != nil {
 		return sidePanels{}, err
+	}
+	var private []torrent.Status
+	if s.concealing(r) {
+		assignments, err := s.store.Assignments(ctx)
+		if err != nil {
+			return sidePanels{}, err
+		}
+		statuses, private = splitPrivate(statuses, assignments, rs)
 	}
 	aliases, unaliased, err := s.trackerAliases(ctx, statuses)
 	if err != nil {
 		return sidePanels{}, err
 	}
-	return sidePanels{Rules: rs, Aliases: aliases, Unaliased: unaliased}, nil
+	// An alias for a host only private torrents use would give them away.
+	public := hosts(statuses)
+	secret := hosts(private)
+	aliases = slices.DeleteFunc(aliases, func(a alias) bool { return secret[a.Host] && !public[a.Host] })
+	return sidePanels{Rules: s.visibleRules(r, rs), Aliases: aliases, Unaliased: unaliased}, nil
+}
+
+func hosts(statuses []torrent.Status) map[string]bool {
+	out := make(map[string]bool)
+	for _, st := range statuses {
+		for _, h := range st.TrackerHosts() {
+			out[h] = true
+		}
+	}
+	return out
 }
 
 // dashboard is the data for the whole page behind any dialog.
@@ -199,22 +230,28 @@ type dashboard struct {
 	chrome
 	List listData
 	Side sidePanels
+	// Events is the live list's stream, carrying the page's unlock key.
+	Events string
 }
 
-func (s *Server) dashboard(ctx context.Context) (dashboard, error) {
+func (s *Server) dashboard(r *http.Request) (dashboard, error) {
 	// Seen hosts are a convenience; an unreachable client is reported by the
 	// list and shouldn't block editing rules and aliases.
-	statuses, err := s.client.Torrents(ctx)
-	list := s.listOf(ctx, statuses, err)
-	side, err := s.sidePanels(ctx, statuses)
+	statuses, err := s.client.Torrents(r.Context())
+	list := s.listOf(r, statuses, err)
+	side, err := s.sidePanels(r, statuses)
 	if err != nil {
 		return dashboard{}, err
 	}
-	return dashboard{chrome: chrome{"Torrents"}, List: list, Side: side}, nil
+	events := "/events"
+	if !s.concealing(r) {
+		events += "?key=" + url.QueryEscape(requestKey(r))
+	}
+	return dashboard{chrome: chrome{"Torrents"}, List: list, Side: side, Events: events}, nil
 }
 
 func (s *Server) torrents(w http.ResponseWriter, r *http.Request) {
-	d, err := s.dashboard(r.Context())
+	d, err := s.dashboard(r)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -225,7 +262,7 @@ func (s *Server) torrents(w http.ResponseWriter, r *http.Request) {
 // dashboardFragment fills in the dashboard behind a dialog opened directly,
 // so that opening one over a loaded dashboard costs nothing extra.
 func (s *Server) dashboardFragment(w http.ResponseWriter, r *http.Request) {
-	d, err := s.dashboard(r.Context())
+	d, err := s.dashboard(r)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -236,7 +273,7 @@ func (s *Server) dashboardFragment(w http.ResponseWriter, r *http.Request) {
 // sideFragment re-renders the right column after a change is saved.
 func (s *Server) sideFragment(w http.ResponseWriter, r *http.Request) {
 	statuses, _ := s.client.Torrents(r.Context())
-	side, err := s.sidePanels(r.Context(), statuses)
+	side, err := s.sidePanels(r, statuses)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -256,7 +293,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	var last []byte
 	for {
 		var buf bytes.Buffer
-		if err := s.pages["torrents"].ExecuteTemplate(&buf, "list", s.list(r.Context())); err != nil {
+		if err := s.pages["torrents"].ExecuteTemplate(&buf, "list", s.list(r)); err != nil {
 			s.fail(w, err)
 			return
 		}

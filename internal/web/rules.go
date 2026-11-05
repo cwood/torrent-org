@@ -47,6 +47,9 @@ type ruleForm struct {
 	// opened from somewhere other than the dashboard.
 	Return   string
 	Swatches []swatch
+	// ShowPrivate offers the private checkbox, which only an unlocked page
+	// may see.
+	ShowPrivate bool
 }
 
 // blankCondition is the row the editor adds for "Add condition".
@@ -93,7 +96,7 @@ func (s *Server) ruleForm(req *http.Request, r rules.Rule, err error) ruleForm {
 	if r.ID == 0 {
 		title = "New rule"
 	}
-	f := ruleForm{chrome: chrome{title}, Rule: r, Match: newGroupView(r.Match, ""), Return: returnTo(req), Swatches: swatches}
+	f := ruleForm{chrome: chrome{title}, Rule: r, Match: newGroupView(r.Match, ""), Return: returnTo(req), Swatches: swatches, ShowPrivate: !s.concealing(req)}
 	if err != nil {
 		f.Errors = strings.Split(err.Error(), "\n")
 	}
@@ -114,6 +117,7 @@ func (s *Server) newRule(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+		rs = s.visibleRules(r, rs)
 		i := slices.IndexFunc(rs, func(o rules.Rule) bool { return strconv.FormatInt(o.ID, 10) == from })
 		if i < 0 {
 			http.NotFound(w, r)
@@ -138,7 +142,8 @@ func (s *Server) editRule(w http.ResponseWriter, r *http.Request) {
 	s.page(w, http.StatusOK, "rule", s.ruleForm(r, rule, nil))
 }
 
-// findRule loads the rule named by the {id} path value.
+// findRule loads the rule named by the {id} path value, treating one r's page
+// may not see as missing.
 func (s *Server) findRule(r *http.Request) (rules.Rule, bool, error) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -148,7 +153,8 @@ func (s *Server) findRule(r *http.Request) (rules.Rule, bool, error) {
 	if err != nil {
 		return rules.Rule{}, false, err
 	}
-	i := slices.IndexFunc(rs, func(r rules.Rule) bool { return r.ID == id })
+	rs = s.visibleRules(r, rs)
+	i := slices.IndexFunc(rs, func(o rules.Rule) bool { return o.ID == id })
 	if i < 0 {
 		return rules.Rule{}, false, nil
 	}
@@ -237,6 +243,7 @@ func (s *Server) saveRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rule := parseRule(r)
+	rule.Private = !s.concealing(r) && r.PostForm.Get("private") != ""
 
 	rs, err := s.store.Rules(r.Context())
 	if err != nil {
@@ -314,14 +321,18 @@ func (s *Server) applyRule(r *http.Request, id int64, selected []string) error {
 	return s.intake.Relocate(r.Context(), moves)
 }
 
-// holdings fetches what placement previews need: every torrent the client
-// holds and its assignment.
+// holdings fetches what placement previews need: every torrent r's page may
+// see and its assignment.
 func (s *Server) holdings(r *http.Request) ([]torrent.Status, map[string]store.Assignment, error) {
 	statuses, err := s.client.Torrents(r.Context())
 	if err != nil {
 		return nil, nil, err
 	}
 	assignments, err := s.store.Assignments(r.Context())
+	if err != nil {
+		return nil, nil, err
+	}
+	statuses, err = s.visibleStatuses(r, statuses, assignments)
 	if err != nil {
 		return nil, nil, err
 	}

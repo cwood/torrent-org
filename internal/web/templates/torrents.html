@@ -1,5 +1,5 @@
 {{define "dashboard"}}
-<section hx-ext="sse" sse-connect="/events" sse-swap="list" id="list">
+<section hx-ext="sse" sse-connect="{{.Events}}" sse-swap="list" id="list">
   {{template "list" .List}}
 </section>
 <div id="side" hx-get="/side" hx-trigger="panels-changed from:body">

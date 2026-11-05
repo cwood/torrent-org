@@ -98,7 +98,7 @@ func (s *Store) Rules(ctx context.Context) ([]rules.Rule, error) {
 	}
 	out := make([]rules.Rule, 0, len(rows))
 	for _, r := range rows {
-		rule := rules.Rule{ID: r.ID, Name: r.Name, Color: r.Color, Path: r.Path}
+		rule := rules.Rule{ID: r.ID, Name: r.Name, Color: r.Color, Path: r.Path, Private: r.Private}
 		if err := json.Unmarshal([]byte(r.Conditions), &rule.Match); err != nil {
 			return nil, fmt.Errorf("rule %d conditions: %w", r.ID, err)
 		}
@@ -116,7 +116,7 @@ func (s *Store) SaveRule(ctx context.Context, r rules.Rule) (int64, error) {
 	}
 	if r.ID == 0 {
 		id, err := s.q.CreateRule(ctx, db.CreateRuleParams{
-			Name: r.Name, Color: r.Color, Path: r.Path, Conditions: string(conds),
+			Name: r.Name, Color: r.Color, Path: r.Path, Conditions: string(conds), Private: r.Private,
 		})
 		if err != nil {
 			return 0, fmt.Errorf("create rule: %w", err)
@@ -124,7 +124,7 @@ func (s *Store) SaveRule(ctx context.Context, r rules.Rule) (int64, error) {
 		return id, nil
 	}
 	n, err := s.q.UpdateRule(ctx, db.UpdateRuleParams{
-		Name: r.Name, Color: r.Color, Path: r.Path, Conditions: string(conds), ID: r.ID,
+		Name: r.Name, Color: r.Color, Path: r.Path, Conditions: string(conds), Private: r.Private, ID: r.ID,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("update rule: %w", err)
@@ -139,6 +139,30 @@ func (s *Store) SaveRule(ctx context.Context, r rules.Rule) (int64, error) {
 // to the default location in their assignments but are not moved.
 func (s *Store) DeleteRule(ctx context.Context, id int64) error {
 	return s.q.DeleteRule(ctx, id)
+}
+
+// Passcode returns the bcrypt hash of the passcode that reveals private rules,
+// and whether one is set.
+func (s *Store) Passcode(ctx context.Context) (string, bool, error) {
+	hash, err := s.q.GetPasscode(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("get passcode: %w", err)
+	}
+	return hash, true, nil
+}
+
+// SetPasscode stores the bcrypt hash of the passcode.
+func (s *Store) SetPasscode(ctx context.Context, hash string) error {
+	return s.q.SetPasscode(ctx, hash)
+}
+
+// ClearPasscode removes the passcode, so the next unlock chooses a new one.
+// Private rules stay private.
+func (s *Store) ClearPasscode(ctx context.Context) error {
+	return s.q.ClearPasscode(ctx)
 }
 
 // Trackers returns the announce host to directory name mapping.

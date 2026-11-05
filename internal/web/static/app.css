@@ -65,6 +65,7 @@ h2 { font-size: 15px; margin: 0 0 8px; }
 .top nav a.primary { color: #fff; background: var(--accent); }
 .top nav a.icon { display: inline-flex; align-items: center; }
 .top nav a.icon:hover { color: var(--text); }
+.top nav a.icon[hidden] { display: none; }
 
 main { max-width: 1500px; margin: 0 auto; padding: 16px; }
 

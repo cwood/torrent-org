@@ -47,7 +47,7 @@ func run(ctx context.Context, args []string) error {
 	fs.String("transmission-url", "", "Transmission RPC URL")
 	fs.String("transmission-username", "", "Transmission RPC username (password via "+config.PasswordEnv+")")
 	fs.Usage = func() {
-		_, _ = fmt.Fprint(fs.Output(), "Usage:\n  torrent-org [flags]                 run the service\n  torrent-org [flags] open [FILE]     open the UI, or preview FILE in it\n\nFlags:\n")
+		_, _ = fmt.Fprint(fs.Output(), "Usage:\n  torrent-org [flags]                 run the service\n  torrent-org [flags] open [FILE]     open the UI, or preview FILE in it\n  torrent-org [flags] reset-passcode  forget the passcode for private rules\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -89,9 +89,29 @@ func run(ctx context.Context, args []string) error {
 			notify(err)
 		}
 		return err
+	case "reset-passcode":
+		return resetPasscode(ctx, cfg)
 	}
 	fs.Usage()
 	return fmt.Errorf("unknown command %q", fs.Arg(0))
+}
+
+// resetPasscode forgets the passcode so the next unlock chooses a new one.
+func resetPasscode(ctx context.Context, cfg config.Config) error {
+	st, err := store.Open(ctx, cfg.Database)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			slog.Warn("close database", "err", err)
+		}
+	}()
+	if err := st.ClearPasscode(ctx); err != nil {
+		return err
+	}
+	slog.Info("passcode cleared; the next unlock chooses a new one")
+	return nil
 }
 
 // serve runs the reconciler and the web UI until ctx is done.

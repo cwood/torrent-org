@@ -214,3 +214,44 @@ func TestMigrateNestedConditionsDown(t *testing.T) {
 	require.NoError(t, sqlDB.QueryRowContext(ctx, `SELECT r.mode, c.field, c.value FROM rules r JOIN rule_conditions c ON c.rule_id = r.id`).Scan(&mode, &field, &value))
 	require.Equal(t, []string{"any", "extension", "mkv"}, []string{mode, field, value}, "top-level conditions survive; nested groups are dropped")
 }
+
+func TestPasscode(t *testing.T) {
+	ctx := t.Context()
+	s := open(t, filepath.Join(t.TempDir(), "test.db"))
+
+	_, set, err := s.Passcode(ctx)
+	require.NoError(t, err)
+	require.False(t, set)
+
+	for _, hash := range []string{"first", "second"} {
+		require.NoError(t, s.SetPasscode(ctx, hash))
+		got, set, err := s.Passcode(ctx)
+		require.NoError(t, err)
+		require.True(t, set)
+		require.Equal(t, hash, got)
+	}
+
+	require.NoError(t, s.ClearPasscode(ctx))
+	_, set, err = s.Passcode(ctx)
+	require.NoError(t, err)
+	require.False(t, set)
+}
+
+func TestPrivateRule(t *testing.T) {
+	ctx := t.Context()
+	s := open(t, filepath.Join(t.TempDir(), "test.db"))
+	r := rules.Rule{Name: "Secret", Color: "#000000", Private: true, Match: rules.Group{Mode: rules.ModeAll}}
+	var err error
+	r.ID, err = s.SaveRule(ctx, r)
+	require.NoError(t, err)
+	got, err := s.Rules(ctx)
+	require.NoError(t, err)
+	require.True(t, got[0].Private)
+
+	r.Private = false
+	_, err = s.SaveRule(ctx, r)
+	require.NoError(t, err)
+	got, err = s.Rules(ctx)
+	require.NoError(t, err)
+	require.False(t, got[0].Private)
+}

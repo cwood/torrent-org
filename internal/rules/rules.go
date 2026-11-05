@@ -161,12 +161,16 @@ func (g Group) String() string {
 // Path may reference {root} and {tracker}. An empty Path places matching
 // torrents in the default location, like a macOS group without a custom
 // download location.
+//
+// Private rules place torrents as usual, but the UI hides them and their
+// torrents until unlocked.
 type Rule struct {
-	ID    int64
-	Name  string
-	Color string
-	Path  string
-	Match Group
+	ID      int64
+	Name    string
+	Color   string
+	Path    string
+	Match   Group
+	Private bool
 }
 
 // Placement is where a torrent should live and which group it belongs to.

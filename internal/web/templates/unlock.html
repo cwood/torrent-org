@@ -1,0 +1,16 @@
+{{define "modal"}}
+{{template "modal-close" "/"}}
+<h1>{{.Title}}</h1>
+<p class="alert" data-unlock-error hidden></p>
+<form id="unlock-form" method="post" action="/unlock" hx-boost="false" class="stack">
+  <label>Passcode
+    <input type="password" name="passcode" required autofocus autocomplete="off">
+  </label>
+  {{if .Choosing}}
+  <label>Confirm passcode
+    <input type="password" name="confirm" required autocomplete="off">
+  </label>
+  {{end}}
+  <div class="row"><button class="primary">{{if .Choosing}}Save{{else}}Unlock{{end}}</button></div>
+</form>
+{{end}}

@@ -37,6 +37,7 @@ type Server struct {
 	pages    map[string]*template.Template
 	uploads  *uploads
 	reveal   func(ctx context.Context, path string) error
+	unlocks  *unlocks
 }
 
 // New creates a Server. interval is how often the torrent list refreshes.
@@ -45,7 +46,13 @@ type Server struct {
 // the browser runs on the same machine as the service. clientUI is the
 // torrent client's own web interface, linked from the header when non-empty.
 func New(client torrent.Client, st *store.Store, in *intake.Reconciler, root string, interval time.Duration, reveal func(ctx context.Context, path string) error, clientUI string) (*Server, error) {
-	pages, err := parseTemplates(clientUI)
+	// The link names no rule, but while a passcode exists Transmission's own
+	// interface would show everything being hidden.
+	conceal := func() bool {
+		_, set, err := st.Passcode(context.Background())
+		return set || err != nil
+	}
+	pages, err := parseTemplates(clientUI, conceal)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +65,7 @@ func New(client torrent.Client, st *store.Store, in *intake.Reconciler, root str
 		pages:    pages,
 		uploads:  newUploads(),
 		reveal:   reveal,
+		unlocks:  newUnlocks(),
 	}, nil
 }
 
@@ -90,10 +98,12 @@ func remaining(d time.Duration) string {
 // parseTemplates builds one template set per page: the shared layout and
 // partials plus the page's own file, so each page can define "content".
 // parseTemplates parses every page. clientUI is the torrent client's own web
-// interface, linked from the header when non-empty.
-func parseTemplates(clientUI string) (map[string]*template.Template, error) {
+// interface, linked from the header when non-empty; concealClient reports
+// whether a page should start with that link hidden.
+func parseTemplates(clientUI string, concealClient func() bool) (map[string]*template.Template, error) {
 	fm := maps.Clone(funcs)
 	fm["clientUI"] = func() string { return clientUI }
+	fm["concealClient"] = concealClient
 	base, err := template.New("").Funcs(fm).ParseFS(assets, "templates/layout.html", "templates/partials/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse layout: %w", err)
@@ -131,6 +141,10 @@ func (s *Server) Handler() http.Handler {
 	// scope covers the whole app.
 	mux.HandleFunc("GET /sw.js", serveFile(static, "sw.js"))
 	mux.HandleFunc("GET /manifest.webmanifest", serveFile(static, "manifest.webmanifest"))
+
+	mux.HandleFunc("GET /unlock", s.showUnlock)
+	mux.HandleFunc("POST /unlock", s.unlock)
+	mux.HandleFunc("POST /lock", s.lock)
 
 	mux.HandleFunc("GET /{$}", s.torrents)
 	mux.HandleFunc("GET /dashboard", s.dashboardFragment)
@@ -181,6 +195,8 @@ func (s *Server) render(w http.ResponseWriter, status int, page, name string, da
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The browser's back cache must not bring back private rows after a lock.
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_, _ = buf.WriteTo(w)
 }

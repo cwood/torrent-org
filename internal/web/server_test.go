@@ -335,12 +335,17 @@ func TestTorrentsPageClientDown(t *testing.T) {
 func TestEvents(t *testing.T) {
 	h := newHarness(t)
 	h.client.EXPECT().Torrents(mock.Anything).Return([]torrent.Status{album("aaa", root+"/red/audio")}, nil)
+	require.Contains(t, firstEvent(t, h, "/events"), "Artist - Album")
+}
 
+// firstEvent returns the first list event the stream at path sends.
+func firstEvent(t *testing.T, h *harness, path string) string {
+	t.Helper()
 	srv := httptest.NewServer(h.h)
 	t.Cleanup(srv.Close)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/events", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+path, nil)
 	require.NoError(t, err)
 	res, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
@@ -356,7 +361,7 @@ func TestEvents(t *testing.T) {
 		require.True(t, ok, "every payload line is a data line: %q", sc.Text())
 		data.WriteString(line)
 	}
-	require.Contains(t, data.String(), "Artist - Album")
+	return data.String()
 }
 
 // ruleValues is the editor form for a rule matching any of extension mkv or

@@ -12,6 +12,7 @@
   <a class="name" href="/torrents/{{.Hash}}" title="{{.DataPath}}">{{.Name}}</a>
   <div class="meta">
     {{if .Manual}}<span class="tag">manual</span>{{end}}
+    {{if .Private}}<span class="tag">private</span>{{end}}
     <span class="state state-{{.State}}">{{.State}}</span>
     {{if not .Complete}}<span>{{percent .Progress}}%</span>{{end}}
     {{with rate .RateDown}}<span class="speed">↓ {{.}}</span>{{end}}

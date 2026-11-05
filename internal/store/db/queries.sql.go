@@ -10,9 +10,18 @@ import (
 	"database/sql"
 )
 
+const clearPasscode = `-- name: ClearPasscode :exec
+DELETE FROM passcode
+`
+
+func (q *Queries) ClearPasscode(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, clearPasscode)
+	return err
+}
+
 const createRule = `-- name: CreateRule :one
-INSERT INTO rules (name, color, path, conditions)
-VALUES (?, ?, ?, ?)
+INSERT INTO rules (name, color, path, conditions, private)
+VALUES (?, ?, ?, ?, ?)
 RETURNING id
 `
 
@@ -21,6 +30,7 @@ type CreateRuleParams struct {
 	Color      string
 	Path       string
 	Conditions string
+	Private    bool
 }
 
 func (q *Queries) CreateRule(ctx context.Context, arg CreateRuleParams) (int64, error) {
@@ -29,6 +39,7 @@ func (q *Queries) CreateRule(ctx context.Context, arg CreateRuleParams) (int64, 
 		arg.Color,
 		arg.Path,
 		arg.Conditions,
+		arg.Private,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -60,6 +71,17 @@ DELETE FROM trackers WHERE host = ?
 func (q *Queries) DeleteTracker(ctx context.Context, host string) error {
 	_, err := q.db.ExecContext(ctx, deleteTracker, host)
 	return err
+}
+
+const getPasscode = `-- name: GetPasscode :one
+SELECT hash FROM passcode
+`
+
+func (q *Queries) GetPasscode(ctx context.Context) (string, error) {
+	row := q.db.QueryRowContext(ctx, getPasscode)
+	var hash string
+	err := row.Scan(&hash)
+	return hash, err
 }
 
 const hasBaseline = `-- name: HasBaseline :one
@@ -101,7 +123,7 @@ func (q *Queries) ListAssignments(ctx context.Context) ([]Assignment, error) {
 }
 
 const listRules = `-- name: ListRules :many
-SELECT id, name, color, path, conditions FROM rules ORDER BY name COLLATE NOCASE, id
+SELECT id, name, color, path, conditions, private FROM rules ORDER BY name COLLATE NOCASE, id
 `
 
 func (q *Queries) ListRules(ctx context.Context) ([]Rule, error) {
@@ -119,6 +141,7 @@ func (q *Queries) ListRules(ctx context.Context) ([]Rule, error) {
 			&i.Color,
 			&i.Path,
 			&i.Conditions,
+			&i.Private,
 		); err != nil {
 			return nil, err
 		}
@@ -169,9 +192,19 @@ func (q *Queries) RecordBaseline(ctx context.Context) error {
 	return err
 }
 
+const setPasscode = `-- name: SetPasscode :exec
+INSERT INTO passcode (id, hash) VALUES (1, ?)
+ON CONFLICT (id) DO UPDATE SET hash = excluded.hash
+`
+
+func (q *Queries) SetPasscode(ctx context.Context, hash string) error {
+	_, err := q.db.ExecContext(ctx, setPasscode, hash)
+	return err
+}
+
 const updateRule = `-- name: UpdateRule :execrows
 UPDATE rules
-SET name = ?, color = ?, path = ?, conditions = ?
+SET name = ?, color = ?, path = ?, conditions = ?, private = ?
 WHERE id = ?
 `
 
@@ -180,6 +213,7 @@ type UpdateRuleParams struct {
 	Color      string
 	Path       string
 	Conditions string
+	Private    bool
 	ID         int64
 }
 
@@ -189,6 +223,7 @@ func (q *Queries) UpdateRule(ctx context.Context, arg UpdateRuleParams) (int64, 
 		arg.Color,
 		arg.Path,
 		arg.Conditions,
+		arg.Private,
 		arg.ID,
 	)
 	if err != nil {

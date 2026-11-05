@@ -20,7 +20,11 @@ type torrentPage struct {
 	Auto rules.Placement
 	// Placement is where the selected choice would place it.
 	Placement rules.Placement
-	Picker    picker
+	// ConcealAuto and ConcealPlacement hide placements that would reveal a
+	// private rule.
+	ConcealAuto      bool
+	ConcealPlacement bool
+	Picker           picker
 	// Files are the torrent's files, checked when selected for download.
 	Files fileChoices
 	// Unchanged is true when saving would neither move, regroup nor change
@@ -131,9 +135,10 @@ func (s *Server) revealTorrent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// status finds the torrent with hash in the client.
+// status finds the torrent with hash in the client, treating one r's page may
+// not see as missing.
 func (s *Server) status(r *http.Request, hash string) (torrent.Status, bool, error) {
-	statuses, err := s.client.Torrents(r.Context())
+	statuses, _, err := s.holdings(r)
 	if err != nil {
 		return torrent.Status{}, false, err
 	}
@@ -180,15 +185,23 @@ func (s *Server) showTorrent(w http.ResponseWriter, r *http.Request, code int, c
 		p = rules.Place(st.Torrent, rs, trackers, s.root)
 	}
 
+	// Titles end up in the browser's history, which outlives any lock.
+	title := st.Name
+	if privateTorrent(st.Torrent, a, rs) {
+		title = "Torrent"
+	}
+	auto := rules.Place(st.Torrent, rs, trackers, s.root)
 	page := torrentPage{
-		chrome:    chrome{st.Name},
-		Status:    st,
-		Manual:    a.Manual,
-		Auto:      rules.Place(st.Torrent, rs, trackers, s.root),
-		Placement: p,
-		Picker:    picker{Rules: rs, Choice: choice, Action: "/torrents/" + hash + "/choose", Target: "torrent"},
-		Unchanged: p.Dir == st.Dir && p.Group == st.Group && choice == current,
-		Error:     errMsg,
+		chrome:           chrome{title},
+		Status:           st,
+		Manual:           a.Manual,
+		Auto:             auto,
+		Placement:        p,
+		ConcealAuto:      s.concealsPlacement(r, auto),
+		ConcealPlacement: s.concealsPlacement(r, p),
+		Picker:           picker{Rules: s.visibleRules(r, rs), Choice: choice, Action: "/torrents/" + hash + "/choose", Target: "torrent"},
+		Unchanged:        p.Dir == st.Dir && p.Group == st.Group && choice == current,
+		Error:            errMsg,
 	}
 	if i := slices.IndexFunc(rs, func(r rules.Rule) bool { return r.ID == a.RuleID }); i >= 0 {
 		page.Rule = &rs[i]

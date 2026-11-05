@@ -9,7 +9,7 @@
     {{range .Rules}}
     <li style="--rule: {{.Color}}">
       <div class="rule-main">
-        <a class="rule-name" href="/rules/{{.ID}}">{{.Name}}</a>
+        <a class="rule-name" href="/rules/{{.ID}}">{{.Name}}</a>{{if .Private}} <span class="tag">private</span>{{end}}
         <div class="rule-detail" title="{{if .Match.HasConditions}}{{.Match}}{{else}}Manual only{{end}}">{{if .Match.HasConditions}}<code>{{.Match}}</code>{{else}}Manual only{{end}}</div>
         <div class="rule-detail" title="{{or .Path "{root}/{tracker}"}}">→ <code>{{or .Path "{root}/{tracker}"}}</code></div>
       </div>
